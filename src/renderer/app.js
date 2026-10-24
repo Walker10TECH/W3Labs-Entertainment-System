@@ -165,6 +165,10 @@ async function loadInitial() {
   try {
     const info = await api.app.info();
     state.info = info;
+    const versionEl = document.querySelector('.version-line');
+    if (versionEl && info?.version) {
+      versionEl.textContent = `v${info.version} · ${info.isPackaged ? 'release' : 'build de desenvolvimento'}`;
+    }
     state.platforms = info.platforms ?? [];
     state.settings = info.settings ?? {};
     state.cores = info.cores ?? [];
@@ -841,7 +845,7 @@ function renderSettings() {
           <div class="install-grid">
             ${state.installCatalog.map(autoInstallerCard).join('') || '<div class="empty-inline">Catálogo de instaladores indisponível.</div>'}
           </div>
-          <div class="info-box mt-12">PCSX2, RPCS3, xemu e Xenia são baixados do GitHub oficial, extraídos no diretório gerenciado e verificados por SHA-256 quando a release publica checksum. A instalação não inclui BIOS, firmware, HDD do Xbox ou jogos.</div>
+          <div class="info-box mt-12">DuckStation, PCSX2, RPCS3, xemu e Xenia são baixados do GitHub oficial, extraídos no diretório gerenciado e verificados por SHA-256 quando a release publica checksum. A instalação não inclui BIOS, firmware, HDD do Xbox ou jogos.</div>
         </section>
 
         <section class="settings-section">

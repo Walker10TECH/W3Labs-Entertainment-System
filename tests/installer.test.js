@@ -14,13 +14,22 @@ test('seleciona o asset oficial correto e rejeita archive traversal', () => {
   ];
   const asset = chooseAsset(assets, /windows-x64-Qt\.7z$/i);
   assert.equal(asset.name, 'pcsx2-v2.8.2-windows-x64-Qt.7z');
+
+  const duckAssets = [
+    { name: 'duckstation-windows-x64-release-symbols.7z' },
+    { name: 'duckstation-windows-x64-release.zip' },
+    { name: 'duckstation-windows-x64-installer.exe' },
+  ];
+  const duckAsset = chooseAsset(duckAssets, /duckstation-windows-x64-release\.zip$/i);
+  assert.equal(duckAsset.name, 'duckstation-windows-x64-release.zip');
+
   assert.equal(safeArchiveEntry('folder/file.exe'), true);
   assert.equal(safeArchiveEntry('../evil.exe'), false);
   assert.equal(safeArchiveEntry('C:/Windows/evil.exe'), false);
   assert.equal(safeArchiveEntry('/tmp/evil'), false);
 });
 
-test('catálogo de instaladores cobre PS2, PS3, Xbox e Xbox 360', () => {
+test('catálogo de instaladores cobre PS1, PS2, PS3, Xbox e Xbox 360', () => {
   const root = temporaryRoot('w3-installer-');
   try {
     const installer = new EmulatorInstaller({
@@ -32,11 +41,18 @@ test('catálogo de instaladores cobre PS2, PS3, Xbox e Xbox 360', () => {
       },
     });
     const catalog = installer.catalog();
-    assert.deepEqual(catalog.map((entry) => entry.coreId).sort(), ['pcsx2', 'rpcs3', 'xemu', 'xenia']);
+    assert.deepEqual(catalog.map((entry) => entry.coreId).sort(), [
+      'duckstation',
+      'pcsx2',
+      'rpcs3',
+      'xemu',
+      'xenia',
+    ]);
     assert.equal(
       catalog.every((entry) => entry.installed === false),
       true,
     );
+    assert.equal(installer.getSourceUrl('duckstation'), 'https://www.duckstation.org/');
     assert.equal(installer.getSourceUrl('xenia'), 'https://xenia.jp/download/');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -61,6 +61,7 @@ function registerIpcHandlers({ ipcMain, dialog, shell, app, runtime, services, g
     version: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
+    isPackaged: app.isPackaged,
     dataRoot: runtime.dataRoot,
     savesRoot: runtime.paths.saves,
     logsRoot: runtime.paths.logs,

@@ -1,6 +1,6 @@
 {
   "name": "w3labs-entertainment-system",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Emulador multi-console com biblioteca unificada, isolamento de núcleos e integridade de BIOS.",
   "main": "src/main/main.js",
   "type": "commonjs",

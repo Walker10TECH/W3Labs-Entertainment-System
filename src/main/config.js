@@ -63,7 +63,7 @@ function createRuntimeConfig({
       maxActiveSessions: 1,
       stopGraceMs: 4_000,
     },
-    version: env.npm_package_version || '0.1.0',
+    version: env.npm_package_version || '1.0.0',
   };
 }
 

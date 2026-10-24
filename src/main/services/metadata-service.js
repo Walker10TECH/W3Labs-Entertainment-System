@@ -195,7 +195,7 @@ class MetadataService {
       signal: AbortSignal.timeout(this.config.metadata.timeoutMs),
       headers: {
         accept: 'application/json',
-        'user-agent': 'W3Labs-Entertainment-System/0.1',
+        'user-agent': 'W3Labs-Entertainment-System/1.0',
         ...(options.headers ?? {}),
       },
     });
@@ -355,7 +355,7 @@ class MetadataService {
     const response = await this.#limiterCall(() =>
       this.fetch(parsed, {
         signal: AbortSignal.timeout(this.config.metadata.timeoutMs),
-        headers: { 'user-agent': 'W3Labs-Entertainment-System/0.1' },
+        headers: { 'user-agent': 'W3Labs-Entertainment-System/1.0' },
       }),
     );
     if (!response.ok) return null;

@@ -185,7 +185,7 @@ A fila serializa chamadas; nenhuma rajada de 50 simultâneas. Cache em SQLite po
 
 ### Instaladores automáticos
 
-`EmulatorInstaller` baixa as releases oficiais de PCSX2, RPCS3, xemu e Xenia Canary via GitHub API, verifica SHA-256 (asset `digest` ou `.sha256` sidecar) quando disponível, valida caminhos do archive com `tar -tf` e extrai com `tar -xf` em um diretório de staging. O staging é promovido atomicamente para `<data>/cores/<coreId>`, com `manifest.json` contendo versão, executável relativo e hash. `CoreRegistry` lê esse manifesto depois de procurar caminhos do sistema, então a instalação passa a valer sem reiniciar.
+`EmulatorInstaller` baixa as releases oficiais de DuckStation, PCSX2, RPCS3, xemu e Xenia Canary via GitHub API, verifica SHA-256 (asset `digest` ou `.sha256` sidecar) quando disponível, valida caminhos do archive com `tar -tf` e extrai com `tar -xf` em um diretório de staging. O staging é promovido atomicamente para `<data>/cores/<coreId>`, com `manifest.json` contendo versão, executável relativo e hash. `CoreRegistry` lê esse manifesto depois de procurar caminhos do sistema, então a instalação passa a valer sem reiniciar.
 
 O fluxo é Windows x64 nesta versão. A interface mostra progresso, fonte oficial e permite atualizar. Nenhum BIOS/firmware/jogo é baixado.
 

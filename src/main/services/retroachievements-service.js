@@ -236,7 +236,7 @@ class RetroAchievementsService extends EventEmitter {
       response = await this.limiter.run(() =>
         this.fetch(url, {
           signal: AbortSignal.timeout(RA_TIMEOUT_MS),
-          headers: { accept: 'application/json', 'user-agent': 'W3Labs-Entertainment-System/0.1' },
+          headers: { accept: 'application/json', 'user-agent': 'W3Labs-Entertainment-System/1.0' },
         }),
       );
     } catch (error) {

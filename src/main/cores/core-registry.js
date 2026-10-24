@@ -61,6 +61,7 @@ const DEFAULT_CORES = Object.freeze({
     candidates: [
       ...candidatePaths(['DuckStation', 'duckstation-qt-x64-ReleaseLTCG.exe']),
       ...candidatePaths(['DuckStation', 'duckstation-qt.exe']),
+      ...candidatePaths(['DuckStation', 'duckstation-qt-x64-Release.exe']),
       '/Applications/DuckStation.app/Contents/MacOS/DuckStation',
       '/usr/bin/duckstation-qt',
     ],

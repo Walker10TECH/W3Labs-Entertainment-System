@@ -9,7 +9,7 @@ Emulador multi-console com interface unificada para **PlayStation, PlayStation 2
 | Camada        | Implementação                                                                    |
 | ------------- | -------------------------------------------------------------------------------- |
 | Frontend      | Electron 45, HTML5, CSS3, Vanilla JS; tema claro, Manrope + Nokia Pure local    |
-| Instaladores  | Releases oficiais do GitHub: PCSX2, RPCS3, xemu e Xenia                          |
+| Instaladores  | Releases oficiais do GitHub: DuckStation, PCSX2, RPCS3, xemu e Xenia            |
 | Backend       | Node.js/JavaScript no processo principal, `child_process.fork` para núcleos      |
 | IPC           | `ipcMain.handle` + `contextBridge`, 100% assíncrono, sem `nodeIntegration`       |
 | Banco         | SQLite nativo do Node 24 (`node:sqlite`), `PRAGMA journal_mode = WAL`            |

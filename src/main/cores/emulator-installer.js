@@ -13,10 +13,23 @@ const { hashFile } = require('../lib/hash');
 const { assertInside } = require('../lib/paths');
 
 const execFileAsync = promisify(execFile);
-const USER_AGENT = 'W3Labs-Entertainment-System/0.1';
+const USER_AGENT = 'W3Labs-Entertainment-System/1.0';
 const GITHUB_API = 'https://api.github.com';
 
 const AUTO_CORES = Object.freeze({
+  duckstation: {
+    coreId: 'duckstation',
+    label: 'DuckStation',
+    repo: 'stenzek/duckstation',
+    site: 'https://www.duckstation.org/',
+    asset: /duckstation-windows-x64-release\.zip$/i,
+    executables: [
+      'duckstation-qt-x64-ReleaseLTCG.exe',
+      'duckstation-qt.exe',
+      'duckstation-qt-x64-Release.exe',
+    ],
+    platforms: ['ps1'],
+  },
   pcsx2: {
     coreId: 'pcsx2',
     label: 'PCSX2',
