@@ -9,7 +9,7 @@ const {
 } = require('../src/main/services/controller-service');
 const { createTestEnvironment, silentLogger } = require('./helpers');
 
-test('valida GUID e rejeita vínculo físico sem identificador do SO', () => {
+test('identifica qualquer controle automaticamente, mesmo sem GUID do SO', () => {
   const env = createTestEnvironment();
   const service = new ControllerService({ db: env.db, logger: silentLogger });
   try {
@@ -19,32 +19,48 @@ test('valida GUID e rejeita vínculo físico sem identificador do SO', () => {
     );
     assert.equal(normalizeGuid('xbox controller'), null);
 
+    // Sem GUID do SO → gera GUID derivado e aceita o vínculo.
+    const semGuid = service.saveProfile({
+      playerIndex: 1,
+      name: 'Sem GUID',
+      api: 'xinput',
+      hardwareGuid: null,
+      productName: 'Generic USB Gamepad',
+    });
+    assert.equal(semGuid.playerIndex, 1);
+    assert.match(
+      semGuid.hardwareGuid,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+
+    // Mesmo controle físico em outro slot → continua sendo o mesmo GUID.
     assert.throws(
       () =>
         service.saveProfile({
-          playerIndex: 1,
+          playerIndex: 2,
           name: 'Sem GUID',
           api: 'xinput',
           hardwareGuid: null,
+          productName: 'Generic USB Gamepad',
         }),
-      (error) => error.code === 'CONTROLLER_GUID_INVALID',
+      (error) => error.code === 'CONTROLLER_ALREADY_BOUND',
     );
 
+    // GUID real do SO continua sendo respeitado.
     const profile = service.saveProfile({
-      playerIndex: 1,
+      playerIndex: 2,
       name: 'Xbox Series',
       api: 'xinput',
-      hardwareGuid: 'a1b2c3d4-e5f6-0718-192a-2b3c4d5e6f70',
+      hardwareGuid: '{A1B2C3D4-E5F6-0718-192A-2B3C4D5E6F70}',
       productName: 'Xbox Wireless Controller',
     });
-    assert.equal(profile.playerIndex, 1);
     assert.equal(profile.api, 'xinput');
     assert.equal(profile.mapping.south, 'A');
 
     assert.throws(
       () =>
         service.saveProfile({
-          playerIndex: 2,
+          playerIndex: 3,
           name: 'Duplicado',
           api: 'xinput',
           hardwareGuid: 'a1b2c3d4-e5f6-0718-192a-2b3c4d5e6f70',
@@ -53,7 +69,7 @@ test('valida GUID e rejeita vínculo físico sem identificador do SO', () => {
     );
 
     const keyboard = service.saveProfile({
-      playerIndex: 2,
+      playerIndex: 3,
       name: 'Teclado',
       api: 'keyboard',
       hardwareGuid: null,
@@ -69,7 +85,7 @@ test('valida GUID e rejeita vínculo físico sem identificador do SO', () => {
   }
 });
 
-test('diagnóstico só marca dispositivo como vinculável se houver GUID', () => {
+test('diagnóstico marca todo controle como vinculável automaticamente', () => {
   const env = createTestEnvironment();
   const service = new ControllerService({ db: env.db, logger: silentLogger });
   try {
@@ -82,7 +98,7 @@ test('diagnóstico só marca dispositivo como vinculável se houver GUID', () =>
           connected: true,
           buttons: 17,
           axes: 4,
-          hardwareGuid: null,
+          hardwareGuid: null, // sem GUID do SO
         },
         {
           index: 1,
@@ -97,7 +113,11 @@ test('diagnóstico só marca dispositivo como vinculável se houver GUID', () =>
       'ps2',
     );
     assert.equal(result.maxPlayers, 2);
-    assert.equal(result.devices[0].bindable, false);
+    // Antes (v1): false quando hardwareGuid era null.
+    // Agora (v2): qualquer controle ganha GUID derivado → bindable.
+    assert.equal(result.devices[0].bindable, true);
+    assert.ok(result.devices[0].hardwareGuid);
+    assert.equal(result.devices[0].productName, 'Xbox Controller');
     assert.equal(result.devices[1].bindable, true);
   } finally {
     env.db.close();
