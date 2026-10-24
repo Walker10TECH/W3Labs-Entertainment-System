@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-24",
+  "notes": "Apenas impressões digitais criptográficas. Nenhum arquivo de BIOS é distribuído. SHA-1 é calculado em toda importação; quando presente, também é exigido neste catálogo.",
+  "entries": [
+    {
+      "platform": "ps1",
+      "region": "ntsc-u",
+      "kind": "bios",
+      "label": "SCPH-1001 (v2.2, NTSC-U)",
+      "size": 524288,
+      "md5": "924e392ed05558ffdb115408c263dccf",
+      "sha1": null,
+      "systemFileName": "scph1001.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "ntsc-u",
+      "kind": "bios",
+      "label": "SCPH-1001 (v2.0, NTSC-U)",
+      "size": 524288,
+      "md5": "dc2b9bf8da62ec93e868cfd29f0d067d",
+      "sha1": null,
+      "systemFileName": "scph1001.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "ntsc-u",
+      "kind": "bios",
+      "label": "SCPH-5501 (v3.0, NTSC-U)",
+      "size": 524288,
+      "md5": "490f666e1afb15b7362b406ed1cea246",
+      "sha1": null,
+      "systemFileName": "scph5501.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "ntsc-u",
+      "kind": "bios",
+      "label": "SCPH-7001 (v4.1, NTSC-U)",
+      "size": 524288,
+      "md5": "1e68c231d0896b7eadcad1d7d8e76129",
+      "sha1": null,
+      "systemFileName": "scph7001.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "ntsc-u",
+      "kind": "bios",
+      "label": "SCPH-101 (v4.4, NTSC-U)",
+      "size": 524288,
+      "md5": "6e3735ff4c7dc899ee98981385f6f3d0",
+      "sha1": null,
+      "systemFileName": "scph101.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "ntsc-j",
+      "kind": "bios",
+      "label": "SCPH-5500 (NTSC-J)",
+      "size": 524288,
+      "md5": "8dd7d5296a650fac7319bce665a6a53c",
+      "sha1": null,
+      "systemFileName": "scph5500.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "pal",
+      "kind": "bios",
+      "label": "SCPH-5502 (PAL)",
+      "size": 524288,
+      "md5": "32736f17079d0b2b7024407c39bd3050",
+      "sha1": null,
+      "systemFileName": "scph5502.bin"
+    },
+    {
+      "platform": "ps1",
+      "region": "global",
+      "kind": "bios",
+      "label": "PSXONPSP660 (PSP, region-free)",
+      "size": 524288,
+      "md5": "c53ca5908936d412331790f4426c6c33",
+      "sha1": null,
+      "systemFileName": "psxonpsp660.bin"
+    },
+    {
+      "platform": "ps2",
+      "region": "ntsc-u",
+      "kind": "bios",
+      "label": "SCPH-70012 (v5.0, NTSC-U)",
+      "size": 4194304,
+      "md5": "d333558cc14561c1fdc334c75d5f37b7",
+      "sha1": null,
+      "systemFileName": "scph70012.bin"
+    },
+    {
+      "platform": "ps2",
+      "region": "pal",
+      "kind": "bios",
+      "label": "SCPH-50008 (v5.0, PAL)",
+      "size": 4194304,
+      "md5": "b53d51edc7fc086685e31b811dc32aad",
+      "sha1": null,
+      "systemFileName": "scph50008.bin"
+    },
+    {
+      "platform": "ps2",
+      "region": "ntsc-j",
+      "kind": "bios",
+      "label": "SCPH-50000 (v5.0, NTSC-J)",
+      "size": 4194304,
+      "md5": "00da1b177096cfd2532c8fa22b43e667",
+      "sha1": null,
+      "systemFileName": "scph50000.bin"
+    },
+    {
+      "platform": "xbox",
+      "region": "global",
+      "kind": "bootrom",
+      "label": "MCPX 1.0 Boot ROM",
+      "size": 512,
+      "md5": "d49c52a4102f6df7bcf8d0617ac475ed",
+      "sha1": null,
+      "systemFileName": "mcpx_1.0.bin"
+    },
+    {
+      "platform": "xbox",
+      "region": "global",
+      "kind": "flash",
+      "label": "Xbox BIOS 3944 (dump retail)",
+      "size": 262144,
+      "md5": "542c62cb976a4993c8c5027dff9638ce",
+      "sha1": null,
+      "systemFileName": "xbox_bios.bin"
+    },
+    {
+      "platform": "xbox",
+      "region": "global",
+      "kind": "flash",
+      "label": "Xbox BIOS 4132 (dump retail)",
+      "size": 262144,
+      "md5": "cf36ad116e2404aff022533b07b11004",
+      "sha1": null,
+      "systemFileName": "xbox_bios.bin"
+    }
+  ]
+}

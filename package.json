@@ -1,0 +1,70 @@
+{
+  "name": "w3labs-entertainment-system",
+  "version": "0.1.0",
+  "description": "Emulador multi-console com biblioteca unificada, isolamento de núcleos e integridade de BIOS.",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "private": true,
+  "author": "W3Labs",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "verify": "node scripts/verify.js",
+    "test": "node --test --test-reporter=spec \"tests/**/*.test.js\"",
+    "test:watch": "node --test --watch \"tests/**/*.test.js\"",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.39.0",
+    "prettier": "^3.6.2"
+  },
+  "build": {
+    "appId": "com.w3labs.entertainment",
+    "productName": "W3Labs Entertainment System",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "config/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "W3Labs-Entertainment-System-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.games"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game"
+    }
+  }
+}

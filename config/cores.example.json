@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "notes": "Copie para <dataRoot>/cores.json e ajuste os caminhos. Binários de emuladores e BIOS não acompanham o projeto. 'bridgeCommand' habilita comandos de estado via JSON Lines; sem bridge, o emulador roda normalmente, mas Save/Load State ficam indisponíveis.",
+  "cores": {
+    "duckstation": {
+      "label": "DuckStation",
+      "executable": "C:\\Program Files\\DuckStation\\duckstation-qt-x64-ReleaseLTCG.exe",
+      "args": ["-batch", "-fullscreen", "--", "{rom}"],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "directory"
+    },
+    "pcsx2": {
+      "label": "PCSX2",
+      "executable": "C:\\Program Files\\PCSX2\\pcsx2-qt.exe",
+      "args": ["-fullscreen", "-batch", "--", "{rom}"],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "directory"
+    },
+    "mesen": {
+      "label": "Mesen",
+      "executable": "C:\\Program Files\\Mesen\\Mesen.exe",
+      "args": ["{rom}", "/fullscreen"],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "none"
+    },
+    "xemu": {
+      "label": "xemu",
+      "executable": "C:\\Program Files\\xemu\\xemu.exe",
+      "args": [
+        "-full-screen",
+        "-dvd_path",
+        "{rom}",
+        "-bootrom_path",
+        "{bios:bootrom}",
+        "-flashrom_path",
+        "{bios:flash}"
+      ],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "files"
+    },
+    "rpcs3": {
+      "label": "RPCS3",
+      "executable": "C:\\Program Files\\RPCS3\\rpcs3.exe",
+      "args": ["--no-gui", "{rom}"],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "none"
+    },
+    "sameboy": {
+      "label": "SameBoy",
+      "executable": "C:\\Program Files\\SameBoy\\sameboy.exe",
+      "args": ["{rom}"],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "none"
+    },
+    "xenia": {
+      "label": "Xenia Canary",
+      "executable": "C:\\Program Files\\Xenia\\xenia_canary.exe",
+      "args": ["{rom}"],
+      "bridgeCommand": null,
+      "capabilities": { "pause": false, "saveState": false, "loadState": false, "screenshot": false },
+      "biosKind": "none"
+    },
+    "example-bridge": {
+      "label": "Núcleo gerenciado (exemplo de bridge)",
+      "executable": "C:\\MeusNucleos\\core.bat",
+      "args": [],
+      "bridgeCommand": ["node", "C:\\MeusNucleos\\bridge.js", "--rom", "{rom}"],
+      "capabilities": { "pause": true, "saveState": true, "loadState": true, "screenshot": true },
+      "biosKind": "files"
+    }
+  }
+}
