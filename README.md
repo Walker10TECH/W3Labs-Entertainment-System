@@ -8,8 +8,8 @@ Emulador multi-console com interface unificada para **PlayStation, PlayStation 2
 
 | Camada        | Implementação                                                                    |
 | ------------- | -------------------------------------------------------------------------------- |
-| Frontend      | Electron 45, HTML5, CSS3, Vanilla JS; tema claro, Manrope + Nokia Pure local    |
-| Instaladores  | Releases oficiais do GitHub: DuckStation, PCSX2, RPCS3, xemu e Xenia            |
+| Frontend      | Electron 45, HTML5, CSS3, Vanilla JS; tema claro, Manrope + Nokia Pure local     |
+| Instaladores  | Releases oficiais do GitHub: DuckStation, PCSX2, RPCS3, xemu e Xenia             |
 | Backend       | Node.js/JavaScript no processo principal, `child_process.fork` para núcleos      |
 | IPC           | `ipcMain.handle` + `contextBridge`, 100% assíncrono, sem `nodeIntegration`       |
 | Banco         | SQLite nativo do Node 24 (`node:sqlite`), `PRAGMA journal_mode = WAL`            |
@@ -152,12 +152,12 @@ O repositório **não inclui** binários de emuladores. Na primeira execução, 
 
 Para PS2, PS3, Xbox Clássico e Xbox 360, abra **Configurações → Instalação automática** e clique em **Instalar**. O W3Labs baixa a release oficial do GitHub, extrai no diretório gerenciado e valida SHA-256 quando a release publica checksum. O `CoreRegistry` reconhece a instalação imediatamente, sem reiniciar.
 
-| Console | Emulador | Fonte oficial |
-| --- | --- | --- |
-| PS2 | PCSX2 | [pcsx2.net/downloads](https://pcsx2.net/downloads/) · [GitHub releases](https://github.com/PCSX2/pcsx2/releases) |
-| PS3 | RPCS3 | [rpcs3.net/download](https://rpcs3.net/download) · [GitHub binaries](https://github.com/RPCS3/rpcs3-binaries-win/releases) |
-| Xbox Clássico | xemu | [xemu.app/download](https://xemu.app/download/) · [GitHub releases](https://github.com/xemu-project/xemu/releases) |
-| Xbox 360 | Xenia Canary | [xenia.jp/download](https://xenia.jp/download/) · [GitHub releases](https://github.com/xenia-canary/xenia-canary/releases) |
+| Console       | Emulador     | Fonte oficial                                                                                                              |
+| ------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| PS2           | PCSX2        | [pcsx2.net/downloads](https://pcsx2.net/downloads/) · [GitHub releases](https://github.com/PCSX2/pcsx2/releases)           |
+| PS3           | RPCS3        | [rpcs3.net/download](https://rpcs3.net/download) · [GitHub binaries](https://github.com/RPCS3/rpcs3-binaries-win/releases) |
+| Xbox Clássico | xemu         | [xemu.app/download](https://xemu.app/download/) · [GitHub releases](https://github.com/xemu-project/xemu/releases)         |
+| Xbox 360      | Xenia Canary | [xenia.jp/download](https://xenia.jp/download/) · [GitHub releases](https://github.com/xenia-canary/xenia-canary/releases) |
 
 PS1, NES e Game Boy continuam com descoberta manual/configuração em `cores.json` (DuckStation, Mesen e SameBoy), pois são leves e não fazem parte do fluxo de download obrigatório. A instalação automática não baixa BIOS, firmware, HDD do Xbox ou jogos.
 
