@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { AppError } = require('../lib/errors');
 const { RateLimiter } = require('../lib/rate-limiter');
+const { PLATFORMS } = require('../../../config/platforms');
 
 const SCREENSCRAPER_SYSTEMS = Object.freeze({
   ps1: '57',
@@ -29,10 +30,78 @@ const ALLOWED_COVER_HOSTS = [
   'www.screenscraper.fr',
   'media.screenscraper.fr',
   'api.screenscraper.fr',
+  'upload.wikimedia.org',
 ];
+
+const WIKIPEDIA_LANGUAGES = ['pt', 'en'];
+const WIKIPEDIA_GAME_HINTS =
+  /\b(jogo|jogos|videogame|video ?game|game|games|playstation|nintendo|xbox|sega|arcade|fliperama|console|desenvolvido|desenvolvida|publicado|publicada|lan[cç]ado|lan[cç]ada|released|developed|published|emulator|emulador)\b/i;
+const WIKIPEDIA_PLATFORM_TERMS = Object.freeze({
+  ps1: ['playstation', 'ps1', 'psx'],
+  ps2: ['playstation 2', 'ps2'],
+  ps3: ['playstation 3', 'ps3'],
+  nes: ['nintendo entertainment system', 'nes', 'famicom'],
+  xbox: ['xbox'],
+  xbox360: ['xbox 360', 'x360'],
+  gb: ['game boy', 'gameboy', 'gbc'],
+});
 
 function cleanText(value, maxLength = 8_000) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : null;
+}
+
+function normalizeLookupText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function cleanWikipediaExtract(value, maxLength = 6_000) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text.length < 80) return null;
+  if (text.length <= maxLength) return text;
+  const cut = text.slice(0, maxLength);
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'));
+  return `${(sentence > maxLength * 0.6 ? cut.slice(0, sentence + 1) : cut).trim()}…`;
+}
+
+function wikipediaCandidateScore(candidate, term, platformId) {
+  const target = normalizeLookupText(term);
+  const pageTitle = normalizeLookupText(String(candidate.title ?? '').replace(/\s*\([^)]*\)\s*$/, ''));
+  if (!target || !pageTitle) return -Infinity;
+
+  let score = 0;
+  if (pageTitle === target) score += 110;
+  else if (pageTitle.startsWith(target) || target.startsWith(pageTitle)) score += 74;
+  else if (pageTitle.includes(target) || target.includes(pageTitle)) score += 48;
+  else {
+    const targetTokens = new Set(target.split(' ').filter(Boolean));
+    const pageTokens = new Set(pageTitle.split(' ').filter(Boolean));
+    const overlap = [...targetTokens].filter((token) => pageTokens.has(token)).length;
+    score += (overlap / Math.max(1, targetTokens.size)) * 42;
+  }
+
+  if (candidate.pageprops?.disambiguation) score -= 90;
+  if (/^(lista|list|anexo)\b/i.test(String(candidate.title ?? ''))) score -= 70;
+
+  const extract = String(candidate.extract ?? '');
+  if (extract) {
+    if (WIKIPEDIA_GAME_HINTS.test(extract)) score += 24;
+    else score -= 20;
+    const normalizedExtract = normalizeLookupText(extract);
+    const platformTerms = WIKIPEDIA_PLATFORM_TERMS[platformId] ?? [];
+    if (platformTerms.some((token) => normalizedExtract.includes(token))) score += 10;
+  } else {
+    score -= 12;
+  }
+
+  if (candidate.coverUrl) score += 4;
+  return score;
 }
 
 function parseYear(value) {
@@ -79,6 +148,11 @@ class MetadataService {
       provider: this.settings.get('metadata.provider'),
       requestsPerMinute: this.config.metadata.requestsPerWindow,
       pendingRequests: this.limiter.pending,
+      wikipedia: {
+        enabled: true,
+        languages: [...WIKIPEDIA_LANGUAGES],
+        coverHost: 'upload.wikimedia.org',
+      },
     };
   }
 
@@ -174,6 +248,232 @@ class MetadataService {
       'METADATA_NOT_CONFIGURED',
       'Configure as credenciais do ScreenScraper ou do IGDB nas configurações.',
     );
+  }
+
+  /**
+   * Completa capa e sinopse a partir da Wikipédia (pt, com fallback en).
+   * O artigo é escolhido por similaridade de título, categorias de videogame
+   * e menções à plataforma; páginas de desambiguação e listas são descartadas.
+   */
+  async wikipediaGame(gameId, { overwrite = true } = {}) {
+    const game = this.db.get('SELECT * FROM games WHERE id = ?', [gameId]);
+    if (!game) throw new AppError('GAME_NOT_FOUND', 'Jogo não encontrado.');
+    const result = await this.#lookupWikipedia(game);
+    if (!result) {
+      return { found: false, gameId, source: 'wikipedia' };
+    }
+
+    const coverExists = Boolean(game.cover_file && fs.existsSync(game.cover_file));
+    let coverFile = game.cover_file ?? null;
+    let coverUpdated = false;
+    if (result.coverUrl && (overwrite || !coverExists)) {
+      try {
+        const downloaded = await this.#downloadCover(game.id, result.coverUrl);
+        if (downloaded) {
+          coverFile = downloaded;
+          coverUpdated = true;
+        }
+      } catch (error) {
+        this.logger?.warn('metadata', 'Falha ao baixar capa da Wikipédia.', {
+          gameId,
+          error: error.message,
+        });
+      }
+    }
+
+    const nextSynopsis = overwrite ? (result.synopsis ?? game.synopsis) : game.synopsis || result.synopsis;
+    const synopsisUpdated = Boolean(nextSynopsis && nextSynopsis !== game.synopsis);
+    const now = new Date().toISOString();
+    this.db.run(
+      `UPDATE games SET
+         synopsis = COALESCE(?, synopsis),
+         cover_file = COALESCE(?, cover_file),
+         metadata_source = 'wikipedia',
+         metadata_url = ?,
+         scrape_status = 'completed',
+         scraped_at = ?,
+         updated_at = ?
+       WHERE id = ?`,
+      [nextSynopsis, coverFile, result.pageUrl ?? null, now, now, game.id],
+    );
+    this.logger?.info('metadata', 'Wikipédia aplicada.', {
+      gameId,
+      language: result.language,
+      article: result.title,
+      synopsisUpdated,
+      coverUpdated,
+    });
+    return {
+      found: true,
+      gameId,
+      source: 'wikipedia',
+      language: result.language,
+      article: result.title,
+      pageUrl: result.pageUrl,
+      synopsisUpdated,
+      coverUpdated,
+      cached: Boolean(result.cached),
+    };
+  }
+
+  async wikipediaBulk({ limit = 8, onlyMissing = true, onProgress = null } = {}) {
+    const safeLimit = Math.max(1, Math.min(24, Number(limit) || 8));
+    const rows = this.db.all(
+      `SELECT id, title FROM games
+       WHERE is_missing = 0
+         ${onlyMissing ? "AND (synopsis IS NULL OR synopsis = '' OR cover_file IS NULL)" : ''}
+       ORDER BY favorite DESC, sort_title COLLATE NOCASE
+       LIMIT ?`,
+      [safeLimit],
+    );
+
+    const summary = { processed: 0, enriched: 0, covers: 0, synopses: 0, failures: [] };
+    for (const [index, row] of rows.entries()) {
+      onProgress?.({
+        phase: 'game-start',
+        index: index + 1,
+        total: rows.length,
+        title: row.title,
+      });
+      try {
+        const result = await this.wikipediaGame(row.id, { overwrite: false });
+        summary.processed += 1;
+        if (result.found) {
+          summary.enriched += 1;
+          if (result.coverUpdated) summary.covers += 1;
+          if (result.synopsisUpdated) summary.synopses += 1;
+        }
+      } catch (error) {
+        summary.processed += 1;
+        summary.failures.push({ gameId: row.id, message: error.message });
+        this.logger?.warn('metadata', 'Enriquecimento Wikipédia falhou.', {
+          gameId: row.id,
+          error: error.message,
+        });
+      }
+      onProgress?.({
+        phase: 'game-done',
+        index: index + 1,
+        total: rows.length,
+        title: row.title,
+        processed: summary.processed,
+        enriched: summary.enriched,
+      });
+    }
+    onProgress?.({ phase: 'done', total: rows.length, ...summary });
+    return summary;
+  }
+
+  async #lookupWikipedia(game) {
+    const term = String(game.title ?? '')
+      .replace(/[®™©]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!term) return null;
+
+    const cacheKey = `wikipedia:${normalizeLookupText(term)}:${game.platform_id}`;
+    const cached = this.#readCache(cacheKey);
+    if (cached) return cached.found ? { ...cached, cached: true } : null;
+
+    const results = {};
+    let lastError = null;
+    for (const language of WIKIPEDIA_LANGUAGES) {
+      if (results.pt?.synopsis && results.pt?.coverUrl) break;
+      try {
+        results[language] = await this.#limiterCall(() =>
+          this.#queryWikipedia(language, term, game.platform_id),
+        );
+      } catch (error) {
+        lastError = error;
+        this.logger?.warn('metadata', 'Consulta à Wikipédia falhou.', {
+          language,
+          game: term,
+          error: error.message,
+        });
+      }
+    }
+
+    const primary = results.pt ?? results.en;
+    if (!primary) {
+      if (lastError) {
+        throw new AppError('WIKIPEDIA_UNAVAILABLE', 'Não foi possível consultar a Wikipédia agora.', {
+          reason: lastError.message,
+        });
+      }
+      this.#writeCache(cacheKey, 'wikipedia', { found: false });
+      return null;
+    }
+
+    const coverSource = results.pt?.coverUrl ? results.pt : results.en;
+    const payload = {
+      found: true,
+      language: primary.language,
+      title: primary.title,
+      synopsis: primary.synopsis ?? results.en?.synopsis ?? null,
+      coverUrl: coverSource?.coverUrl ?? null,
+      pageUrl: primary.pageUrl,
+    };
+    this.#writeCache(cacheKey, 'wikipedia', payload);
+    return payload;
+  }
+
+  async #queryWikipedia(language, term, platformId) {
+    const platform = PLATFORMS[platformId]?.name ?? '';
+    const params = new URLSearchParams({
+      action: 'query',
+      generator: 'search',
+      gsrsearch: term,
+      gsrnamespace: '0',
+      gsrlimit: '8',
+      prop: 'pageimages|extracts|pageprops|info|categories',
+      inprop: 'url',
+      piprop: 'thumbnail|original',
+      pithumbsize: '1400',
+      exintro: '1',
+      explaintext: '1',
+      exlimit: '8',
+      clshow: '!hidden',
+      cllimit: '20',
+      redirects: '1',
+      format: 'json',
+      formatversion: '2',
+    });
+    const data = await this.#fetchJson(`https://${language}.wikipedia.org/w/api.php?${params.toString()}`);
+    const pages = Array.isArray(data?.query?.pages) ? data.query.pages : [];
+    const candidates = pages.map((page) => {
+      const coverUrl = page.thumbnail?.source ?? page.original?.source ?? null;
+      return {
+        title: page.title,
+        language,
+        synopsis: cleanWikipediaExtract(page.extract),
+        coverUrl: coverUrl ? String(coverUrl).replace(/^http:/, 'https:') : null,
+        pageUrl:
+          page.fullurl ??
+          `https://${language}.wikipedia.org/wiki/${encodeURIComponent(String(page.title).replaceAll(' ', '_'))}`,
+        pageprops: page.pageprops ?? {},
+        categories: Array.isArray(page.categories) ? page.categories : [],
+      };
+    });
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (const candidate of candidates) {
+      const categoryText = candidate.categories.map((entry) => entry.title ?? '').join(' ');
+      const isGameCategory = /jogos eletr[oô]nicos|video ?games?|videogames/i.test(categoryText);
+      const score = wikipediaCandidateScore(candidate, term, platformId) + (isGameCategory ? 30 : 0);
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+    if (!best || bestScore < 70) return null;
+    this.logger?.debug('metadata', 'Artigo da Wikipédia selecionado.', {
+      language,
+      article: best.title,
+      platform,
+      score: Math.round(bestScore),
+    });
+    return best;
   }
 
   #credentialsFor(provider) {
@@ -322,6 +622,7 @@ class MetadataService {
          developer = COALESCE(?, developer),
          genre = COALESCE(?, genre),
          cover_file = COALESCE(?, cover_file),
+         metadata_source = ?,
          scrape_status = 'completed',
          scraped_at = ?,
          updated_at = ?
@@ -335,6 +636,7 @@ class MetadataService {
         metadata.developer,
         metadata.genre,
         coverFile,
+        provider,
         new Date().toISOString(),
         new Date().toISOString(),
         game.id,
@@ -360,6 +662,7 @@ class MetadataService {
     );
     if (!response.ok) return null;
     const type = String(response.headers.get('content-type') ?? '').toLowerCase();
+    if (type.includes('svg')) return null;
     const extension = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > 12 * 1024 * 1024) return null;

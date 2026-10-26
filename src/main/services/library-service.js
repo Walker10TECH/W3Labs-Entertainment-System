@@ -79,6 +79,8 @@ function mapGame(row) {
     favorite: Boolean(row.favorite),
     isMissing: Boolean(row.is_missing),
     scrapeStatus: row.scrape_status,
+    metadataSource: row.metadata_source,
+    metadataUrl: row.metadata_url,
     playtimeSeconds: Number(row.playtime_seconds ?? 0),
     lastPlayedAt: row.last_played_at,
     createdAt: row.created_at,

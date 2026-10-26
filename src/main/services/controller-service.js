@@ -3,17 +3,45 @@
 const crypto = require('node:crypto');
 const { AppError } = require('../lib/errors');
 const { getPlatform } = require('../../../config/platforms');
+const {
+  detectControllers,
+  summarize,
+  normalizeGuid,
+  deterministicGuid,
+  classifyCategory,
+  isHidGameDevice,
+  cleanGamepadName,
+  KEYBOARD_GUID,
+} = require('./controller-detector');
 
-const GUID_PATTERN = /^[{(]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[)}]?$/i;
-const KEYBOARD_GUID = '00000000-0000-0000-0000-000000000000';
+const SUPPORTED_APIS = Object.freeze(['xinput', 'directinput', 'keyboard']);
 
-function normalizeGuid(value) {
-  const guid = String(value ?? '')
-    .trim()
-    .replace(/^\{|\}$/g, '')
-    .toLowerCase();
-  return GUID_PATTERN.test(guid) ? guid : null;
+/**
+ * Controles sem identificador do sistema recebem um GUID derivado do nome.
+ * É estável entre sessões e permite vincular o aparelho mesmo quando o SO
+ * não reporta GUID (Chromium, drivers genéricos).
+ */
+function derivedProfileGuid(api, productName) {
+  return deterministicGuid('virtual', api, normalizeName(productName));
 }
+
+function normalizeName(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeApi(api, mapping) {
+  if (SUPPORTED_APIS.includes(api)) return api;
+  if (api === 'gamepad-api' || api == null) {
+    return mapping === 'standard' ? 'xinput' : 'directinput';
+  }
+  return null;
+}
+
+// ============================================================================
+// Perfis: mapping, sanitização, serialização
+// ============================================================================
 
 function mappingFor(api) {
   if (api === 'keyboard') {
@@ -65,6 +93,14 @@ function parseMapping(raw, api) {
   return Object.keys(mapping).length > 0 ? mapping : mappingFor(api);
 }
 
+function safeJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
 function publicProfile(row) {
   return {
     id: row.id,
@@ -80,13 +116,9 @@ function publicProfile(row) {
   };
 }
 
-function safeJson(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return {};
-  }
-}
+// ============================================================================
+// ControllerService
+// ============================================================================
 
 class ControllerService {
   constructor({ db, logger }) {
@@ -99,29 +131,31 @@ class ControllerService {
   }
 
   /**
-   * Aceita apenas GUID reportado pelo SO no formato canônico. O renderer não
-   * consegue fabricar um GUID válido para vincular um controle físico.
+   * O GUID reportado pelo SO é preferido. Quando ele não existe, o perfil
+   * recebe um GUID derivado do produto — o vínculo deixa de depender do
+   * navegador/driver para funcionar.
    */
   saveProfile({ playerIndex, name, api, hardwareGuid, productName = null, mapping = null }) {
     const player = Number(playerIndex);
     if (!Number.isInteger(player) || player < 1 || player > 4) {
       throw new AppError('CONTROLLER_PLAYER_INVALID', 'Jogador deve estar entre 1 e 4.');
     }
-    if (!['xinput', 'directinput', 'keyboard'].includes(api)) {
+    const resolvedApi = normalizeApi(api, null);
+    if (!resolvedApi) {
       throw new AppError('CONTROLLER_API_INVALID', 'API de entrada inválida.');
     }
 
+    const cleanName =
+      String(name ?? '')
+        .trim()
+        .slice(0, 80) || `Jogador ${player}`;
+    const cleanProduct = productName ? String(productName).trim().slice(0, 160) : null;
+
     let guid;
-    if (api === 'keyboard') {
+    if (resolvedApi === 'keyboard') {
       guid = KEYBOARD_GUID;
     } else {
-      guid = normalizeGuid(hardwareGuid);
-      if (!guid) {
-        throw new AppError(
-          'CONTROLLER_GUID_INVALID',
-          'O sistema operacional não reportou um GUID de hardware válido. O perfil não pode ser vinculado.',
-        );
-      }
+      guid = normalizeGuid(hardwareGuid) ?? derivedProfileGuid(resolvedApi, cleanProduct || cleanName);
     }
 
     const duplicate = this.db.get(
@@ -134,12 +168,7 @@ class ControllerService {
 
     const existing = this.db.get('SELECT * FROM controller_profiles WHERE player_index = ?', [player]);
     const id = existing?.id ?? crypto.randomUUID();
-    const cleanName =
-      String(name ?? '')
-        .trim()
-        .slice(0, 80) || `Jogador ${player}`;
-    const cleanProduct = productName ? String(productName).trim().slice(0, 160) : null;
-    const serializedMapping = JSON.stringify(parseMapping(mapping, api));
+    const serializedMapping = JSON.stringify(parseMapping(mapping, resolvedApi));
     this.db.run(
       `INSERT INTO controller_profiles (
          id, player_index, name, api, hardware_guid, product_name, is_valid, mapping_json, updated_at
@@ -153,9 +182,13 @@ class ControllerService {
          is_valid = 1,
          mapping_json = excluded.mapping_json,
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
-      [id, player, cleanName, api, guid, cleanProduct, serializedMapping],
+      [id, player, cleanName, resolvedApi, guid, cleanProduct, serializedMapping],
     );
-    this.logger?.info('controllers', 'Perfil de controle salvo.', { player, api, guid });
+    this.logger?.info('controllers', 'Perfil de controle salvo.', {
+      player,
+      api: resolvedApi,
+      guid,
+    });
     return this.listProfiles().find((profile) => profile.id === id);
   }
 
@@ -175,35 +208,109 @@ class ControllerService {
   }
 
   /**
-   * Converte a lista do Gamepad API em um diagnóstico. Um gamepad só é
-   * "boundable" quando o campo GUID traz um UUID de hardware válido.
+   * Diagnóstico a partir da lista do Gamepad API (sem bridge nativo).
+   * Todo dispositivo recebe um GUID estável, então todos são vinculáveis.
    */
   inspectDetected(gamepads = [], platformId = null) {
     const platform = platformId ? getPlatform(platformId) : null;
     return {
       maxPlayers: platform?.maxPlayers ?? 4,
       guidance:
-        'XInput e DirectInput exigem GUID de hardware reportado pelo SO. O Chromium entrega apenas o ID do dispositivo; vincule via bridge de entrada nativo quando o GUID não estiver disponível.',
-      devices: (Array.isArray(gamepads) ? gamepads : []).map((gamepad) => {
-        const guid = normalizeGuid(gamepad.hardwareGuid);
+        'Diagnóstico via Gamepad API. Dispositivos sem GUID do sistema recebem um GUID derivado do nome, então o vínculo continua disponível.',
+      sources: ['chromium-gamepad-api'],
+      counts: {
+        total: Array.isArray(gamepads) ? gamepads.length : 0,
+        verified: 0,
+        bindable: Array.isArray(gamepads) ? gamepads.length : 0,
+      },
+      devices: (Array.isArray(gamepads) ? gamepads : []).map((gamepad, index) => {
+        const rawId = String(gamepad.id ?? 'Controle').slice(0, 160);
+        const productName = cleanGamepadName(rawId) || 'Controle';
+        const reported = normalizeGuid(gamepad.hardwareGuid);
+        const api = normalizeApi(null, gamepad.mapping) ?? 'directinput';
+        const guid = reported ?? derivedProfileGuid(api, productName);
         return {
-          index: Number(gamepad.index) || 0,
-          id: String(gamepad.id ?? 'Controle').slice(0, 160),
-          mapping: gamepad.mapping ?? 'standard',
+          index,
+          key: `chromium-gamepad-api:${guid}`,
+          id: productName,
+          productName,
+          api,
+          source: 'chromium-gamepad-api',
+          category: classifyCategory(productName),
+          mapping: gamepad.mapping ?? '',
           connected: Boolean(gamepad.connected),
           buttons: Number(gamepad.buttons) || 0,
           axes: Number(gamepad.axes) || 0,
           hardwareGuid: guid,
-          bindable: Boolean(guid),
+          guidOrigin: reported ? 'os' : 'derived',
+          bindable: true,
         };
       }),
+    };
+  }
+
+  /**
+   * Diagnóstico nativo (XInput + HID) com fallback para os hints do Chromium.
+   * Preserva a forma histórica dos campos e adiciona metadados de categoria,
+   * origem do GUID e chave estável de vínculo.
+   */
+  async inspectHardware(platformId = null, { gamepadHints = null } = {}) {
+    const platform = platformId ? getPlatform(platformId) : null;
+    const detection = await detectControllers({
+      platformId: platform?.id ?? null,
+      maxPlayers: platform?.maxPlayers ?? 4,
+      gamepadHints: Array.isArray(gamepadHints) ? gamepadHints.slice(0, 16) : null,
+    });
+
+    return {
+      maxPlayers: detection.maxPlayers,
+      guidance: detection.guidance,
+      sources: detection.sources,
+      counts: detection.counts,
+      devices: detection.devices.map((device) => ({
+        index: device.index,
+        key: device.key,
+        id: device.id,
+        hardwareGuid: device.hardwareGuid,
+        productName: device.productName,
+        api: device.api,
+        bindable: true,
+        source: device.source,
+        category: device.category,
+        realGuid: device.realGuid,
+        guidOrigin: device.guidOrigin,
+        vendorId: device.vendorId,
+        productId: device.productId,
+        manufacturer: device.manufacturer,
+        connected: device.connected ?? true,
+        slot: device.slot ?? null,
+        mapping: device.mapping ?? null,
+        buttons: device.buttons ?? null,
+        axes: device.axes ?? null,
+      })),
     };
   }
 }
 
 module.exports = {
   ControllerService,
+  scanHardwareControllers: async () => {
+    const detection = await detectControllers();
+    return detection.devices.map((device, index) => ({
+      index,
+      id: device.id,
+      hardwareGuid: device.hardwareGuid,
+      productName: device.productName,
+      api: device.api,
+      source: device.source,
+    }));
+  },
+  detectControllers,
+  summarize,
   normalizeGuid,
   mappingFor,
   KEYBOARD_GUID,
+  deterministicGuid,
+  classifyCategory,
+  isHidGameDevice,
 };

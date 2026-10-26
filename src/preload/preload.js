@@ -21,6 +21,8 @@ const EVENT_CHANNELS = new Set([
   'bios:changed',
   'cores:install-progress',
   'cores:changed',
+  'controllers:changed',
+  'metadata:wikipedia-progress',
 ]);
 
 function subscribe(channel, callback) {
@@ -42,6 +44,7 @@ contextBridge.exposeInMainWorld('w3', {
     info: () => invoke('app:info'),
     stats: () => invoke('app:stats'),
     openPath: (target) => invoke('app:openPath', target),
+    openExternal: (url) => invoke('app:openExternal', url),
   },
   settings: {
     getAll: () => invoke('settings:getAll'),
@@ -67,6 +70,9 @@ contextBridge.exposeInMainWorld('w3', {
     status: () => invoke('metadata:status'),
     setCredentials: (provider, credentials) => invoke('metadata:credentials', provider, credentials),
     clearCredentials: (provider) => invoke('metadata:clearCredentials', provider),
+    wikipedia: (gameId, options) => invoke('metadata:wikipedia', gameId, options),
+    wikipediaBulk: (options) => invoke('metadata:wikipediaBulk', options),
+    onWikipediaProgress: (callback) => subscribe('metadata:wikipedia-progress', callback),
   },
   bios: {
     list: () => invoke('bios:list'),
@@ -97,6 +103,8 @@ contextBridge.exposeInMainWorld('w3', {
     setMapping: (id, mapping) => invoke('controllers:setMapping', id, mapping),
     removeProfile: (id) => invoke('controllers:removeProfile', id),
     inspect: (gamepads, platformId) => invoke('controllers:inspect', gamepads, platformId),
+    inspectHardware: (platformId, options) => invoke('controllers:inspectHardware', platformId, options),
+    onChanged: (callback) => subscribe('controllers:changed', callback),
   },
   retroachievements: {
     status: () => invoke('ra:status'),

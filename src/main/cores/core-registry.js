@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { AppError } = require('../lib/errors');
 const { getPlatform } = require('../../../config/platforms');
+const { applyLaunchPreferences } = require('./launch-preferences');
 
 function expand(value) {
   return String(value)
@@ -293,7 +294,8 @@ class CoreRegistry {
     });
   }
 
-  buildLaunchSpec(platformId, game, biosFiles, { stateDir, slot = 0 } = {}) {
+  buildLaunchSpec(platformId, game, biosFiles, options = {}) {
+    const { stateDir, slot = 0, preferences = null, overlayDirectory = null } = options;
     const platform = getPlatform(platformId);
     const core = this.get(platform.defaultCore);
     const executable = this.resolveExecutable(core);
@@ -326,16 +328,40 @@ class CoreRegistry {
         return tokens[key];
       });
 
+    const baseArgs = core.args.map(replaceTokens);
+    const bridgeCommand = core.bridgeCommand?.map(replaceTokens) ?? null;
+    const environment = { ...core.environment };
+
+    let args = baseArgs;
+    let preferenceReport = { applied: [], ignored: [], overlayPath: null };
+    if (preferences) {
+      const result = applyLaunchPreferences({
+        coreId: core.id,
+        settings: preferences,
+        baseArgs,
+        executable: executable ?? bridgeExecutable,
+        overlayDirectory,
+      });
+      args = result.args;
+      preferenceReport = {
+        applied: result.applied,
+        ignored: result.ignored,
+        overlayPath: result.overlayPath,
+      };
+      environment.W3_LAUNCH_PREFERENCES = JSON.stringify(result.preferences);
+    }
+
     return {
       coreId: core.id,
       label: core.label,
       executable: executable ?? bridgeExecutable,
-      args: core.args.map(replaceTokens),
-      bridgeCommand: core.bridgeCommand?.map(replaceTokens) ?? null,
-      environment: { ...core.environment },
+      args,
+      bridgeCommand,
+      environment,
       capabilities: core.capabilities,
       biosKind: core.biosKind,
       stateDir,
+      preferences: preferenceReport,
     };
   }
 }

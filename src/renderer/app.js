@@ -18,8 +18,6 @@ const state = {
   matrix: [],
   profiles: [],
   detected: null,
-  ra: null,
-  metadata: null,
   active: null,
   cores: [],
   installCatalog: [],
@@ -33,6 +31,12 @@ const state = {
   pendingLaunch: null,
   confirmResolve: null,
   busy: false,
+  detecting: false,
+  detectGeneration: 0,
+  gamepadSignature: '',
+  controllerWatch: null,
+  wikiBusy: false,
+  wikiProgress: null,
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -43,8 +47,65 @@ const VIEW_META = {
   library: { title: 'Biblioteca', eyebrow: 'Coleção unificada' },
   bios: { title: 'BIOS & Firmware', eyebrow: 'Integridade e região' },
   controllers: { title: 'Controles', eyebrow: 'XInput · DirectInput' },
-  achievements: { title: 'Conquistas', eyebrow: 'RetroAchievements' },
   settings: { title: 'Configurações', eyebrow: 'Sistema e núcleos' },
+};
+
+const INSTALL_PHASE_LABEL = {
+  release: 'Consultando release oficial',
+  download: 'Baixando',
+  verify: 'Verificando SHA-256',
+  extract: 'Extraindo pacote',
+  done: 'Concluído',
+};
+
+const BIOS_REGION_LABELS = {
+  'ntsc-u': 'NTSC-U (USA)',
+  'ntsc-j': 'NTSC-J (Japão)',
+  pal: 'PAL (Europa)',
+  global: 'Global / region-free',
+};
+
+const CONTROLLER_CATEGORIES = {
+  gamepad: { label: 'Gamepad', icon: 'controller' },
+  wheel: { label: 'Volante', icon: 'wheel' },
+  'flight-stick': { label: 'Joystick de voo', icon: 'joystick' },
+  'arcade-stick': { label: 'Arcade stick', icon: 'arcade' },
+};
+
+const CONTROLLER_SOURCES = {
+  'xinput-ffi': 'XInput',
+  'node-hid': 'HID · DirectInput',
+  'chromium-gamepad-api': 'Gamepad API',
+};
+
+const GUID_ORIGIN_LABELS = {
+  os: 'GUID do sistema',
+  hardware: 'GUID do hardware',
+  slot: 'GUID por slot',
+  derived: 'GUID derivado',
+};
+
+const CONTROLLER_API_LABELS = {
+  xinput: 'XInput',
+  directinput: 'DirectInput',
+  keyboard: 'Teclado',
+  'gamepad-api': 'Gamepad API',
+};
+
+const METADATA_SOURCE_LABELS = {
+  wikipedia: 'Wikipédia',
+  screenscraper: 'ScreenScraper',
+  igdb: 'IGDB',
+};
+
+const CORE_MARKS = {
+  duckstation: 'DS',
+  pcsx2: 'P2',
+  rpcs3: 'R3',
+  xemu: 'XE',
+  xenia: 'XN',
+  mesen: 'ME',
+  sameboy: 'SB',
 };
 
 function esc(value) {
@@ -69,6 +130,76 @@ function platformOf(id) {
       name: id,
     }
   );
+}
+
+const PLATFORM_LOGO_ART = {
+  ps1: { src: './assets/logos/platform-ps1.png', fit: 'contain' },
+  ps2: { src: './assets/logos/platform-ps2.jpg', fit: 'cover' },
+  ps3: { src: './assets/logos/platform-ps3.png', fit: 'contain', mono: true, wide: true },
+  nes: { src: './assets/logos/platform-nes.png', fit: 'contain', wide: true },
+  xbox: { src: './assets/logos/platform-xbox.jpg', fit: 'cover' },
+  xbox360: { src: './assets/logos/platform-xbox360.png', fit: 'contain' },
+};
+
+const MICRO_LOGO_CLASSES = new Set(['platform-logo--badge', 'platform-logo--chip', 'platform-logo--inline']);
+
+function platformLogo(platform, extraClass = '') {
+  const micro = extraClass.split(/\s+/).some((name) => MICRO_LOGO_CLASSES.has(name));
+  const art = micro ? null : PLATFORM_LOGO_ART[platform.id];
+  if (art) {
+    const mono = art.mono ? ' platform-logo--mono' : '';
+    const wide = art.wide ? ' platform-logo--wide' : '';
+    return `<span class="platform-logo platform-logo--art platform-logo--${art.fit} ${extraClass}${mono}${wide}" style="--platform-color:${esc(platform.color)}" title="${esc(platform.name)}" aria-hidden="true">
+    <img class="platform-logo-img" src="${art.src}" alt="" decoding="async">
+  </span>`;
+  }
+  const marks = {
+    ps: `
+      <rect x="2" y="2" width="44" height="44" rx="13" fill="currentColor" opacity=".12"/>
+      <path d="M12 35V13h10c5.2 0 8.5 3 8.5 7.6S27.2 28.2 22 28.2h-4.6V35H12Zm5.4-11.2h4.2c2 0 3.3-1.2 3.3-3.2 0-1.9-1.3-3.2-3.3-3.2h-4.2v6.4Z" fill="currentColor"/>`,
+    xbox: `
+      <circle cx="24" cy="24" r="17" fill="none" stroke="currentColor" stroke-width="2.7"/>
+      <path d="M13.5 14c6.2 4.6 14.5 12 20.5 20M34.5 14c-6.2 4.6-14.5 12-20.5 20" fill="none" stroke="currentColor" stroke-width="3.1" stroke-linecap="round"/>
+      <circle cx="24" cy="24" r="3" fill="currentColor" opacity=".28"/>`,
+    nes: `
+      <rect x="2" y="2" width="44" height="44" rx="13" fill="currentColor" opacity=".12"/>
+      <text x="24" y="28" text-anchor="middle" font-family="Manrope, sans-serif" font-size="14" font-weight="800" letter-spacing=".6" fill="currentColor">NES</text>
+      <path d="M17 33h3v3h-3zM28 33h3v3h-3z" fill="currentColor"/>`,
+    gb: `
+      <rect x="12" y="4" width="24" height="40" rx="7" fill="none" stroke="currentColor" stroke-width="2.6"/>
+      <rect x="16.5" y="9.5" width="15" height="11" rx="2.5" fill="currentColor" opacity=".22"/>
+      <path d="M22.5 27v6M19.5 30h6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+      <circle cx="30.5" cy="29.5" r="1.8" fill="currentColor"/>
+      <circle cx="33.5" cy="33" r="1.8" fill="currentColor"/>`,
+  };
+  const mark =
+    platform.id === 'xbox' || platform.id === 'xbox360'
+      ? marks.xbox
+      : platform.id === 'nes'
+        ? marks.nes
+        : platform.id === 'gb'
+          ? marks.gb
+          : marks.ps;
+  return `<span class="platform-logo ${extraClass}" style="--platform-color:${esc(platform.color)}" title="${esc(platform.name)}" aria-hidden="true">
+    <svg viewBox="0 0 48 48">${mark}</svg>
+  </span>`;
+}
+
+function coreMark(coreId, label = '') {
+  const mark =
+    CORE_MARKS[coreId] ??
+    String(label || coreId || 'W3')
+      .slice(0, 2)
+      .toUpperCase();
+  return `<span class="core-mark" aria-hidden="true">${esc(mark)}</span>`;
+}
+
+function metadataSource(game) {
+  const label = METADATA_SOURCE_LABELS[game.metadataSource];
+  if (!label) return '';
+  return `<button class="source-chip" type="button" data-action="open-source" data-url="${esc(game.metadataUrl ?? '')}" ${game.metadataUrl ? '' : 'disabled'}>
+    ${icon('globe')} ${esc(label)}
+  </button>`;
 }
 
 function initials(title) {
@@ -179,8 +310,6 @@ async function loadInitial() {
       api.bios.list(),
       api.bios.matrix(),
       api.controllers.profiles(),
-      api.retroachievements.status(),
-      api.metadata.status(),
       api.emulation.active(),
       api.cores.installCatalog(),
     ]);
@@ -192,13 +321,12 @@ async function loadInitial() {
     state.bios = value(3, []);
     state.matrix = value(4, []);
     state.profiles = value(5, []);
-    state.ra = value(6, { connected: false, hardcore: false });
-    state.metadata = value(7, null);
-    state.active = value(8, null);
-    state.installCatalog = value(9, []);
+    state.active = value(6, null);
+    state.installCatalog = value(7, []);
     state.loading = false;
     syncShell();
     renderView();
+    resetViewScroll();
     startLiveClock();
   } catch (error) {
     state.loading = false;
@@ -217,29 +345,6 @@ async function loadInitial() {
 function syncShell() {
   $('#navGameCount').textContent = String(state.stats?.games ?? state.games.length ?? 0);
   $('#navBiosDot').hidden = !state.matrix.some((entry) => entry.required && !entry.ready);
-  const hardcore = Boolean(state.ra?.hardcore);
-  $('#navHardcore').hidden = !hardcore;
-  $('#hardcoreSideText').textContent = hardcore ? 'Ativo · saves bloqueados' : 'Desativado';
-  $('#hardcoreSwitch').closest('.hardcore-card').classList.toggle('is-active', hardcore);
-  $('#sidebarHardcore').setAttribute('aria-pressed', String(hardcore));
-  $('#raTopName').textContent = state.ra?.connected ? state.ra.username : 'RetroAchievements';
-  $('#raTopState').textContent = state.ra?.connected
-    ? hardcore
-      ? 'Hardcore ativo'
-      : `${state.ra.profile?.points ?? 0} pontos`
-    : 'não conectado';
-  if (state.ra?.connected) {
-    const avatar = state.ra.profile?.avatar;
-    $('#raAvatar').innerHTML = avatar
-      ? `<img src="${esc(avatar)}" alt="">`
-      : esc(
-          String(state.ra.username ?? 'W3')
-            .slice(0, 2)
-            .toUpperCase(),
-        );
-  } else {
-    $('#raAvatar').textContent = 'W3';
-  }
   $$('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.nav === state.view));
   const meta = VIEW_META[state.view];
   $('#topbarTitle').textContent = meta.title;
@@ -256,11 +361,17 @@ function renderActiveStrip() {
     return;
   }
   const active = state.active;
+  const applied = active.preferences?.applied ?? [];
   strip.hidden = false;
   strip.innerHTML = `
     <span class="live-dot"></span>
     <strong>${esc(active.gameTitle)}</strong>
     <span>${esc(active.platformName)} · ${esc(active.coreLabel)} · ${formatPlaytime(active.playtimeSeconds)}</span>
+    <span title="${esc(applied.map((entry) => `${entry.label}: ${entry.detail}`).join(' · '))}">${
+      applied.length
+        ? `${applied.length} preferência(s) do app no núcleo`
+        : 'preferências do app não se aplicam a este núcleo'
+    }</span>
     <span class="strip-spacer"></span>
     <button type="button" data-action="open-active-game">Abrir sessão</button>
     <button type="button" data-action="stop-session">${icon('stop')} Encerrar</button>
@@ -275,7 +386,6 @@ function renderView() {
     library: renderLibrary,
     bios: renderBios,
     controllers: renderControllers,
-    achievements: renderAchievements,
     settings: renderSettings,
   };
   try {
@@ -286,12 +396,20 @@ function renderView() {
   }
 }
 
+function resetViewScroll() {
+  viewRoot.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+}
+
 function consoleTiles() {
   return state.platforms
     .map(
       (platform) => `
       <div class="console-tile" style="--tile:${esc(platform.color)}" title="${esc(platform.name)}">
-        <i></i><span>${esc(platform.shortName)}</span>
+        ${platformLogo(platform, 'console-logo')}
+        <div class="console-copy">
+          <strong>${esc(platform.shortName)}</strong>
+          <span>${esc(platform.manufacturer)} · ${platform.year}</span>
+        </div>
       </div>`,
     )
     .join('');
@@ -305,28 +423,59 @@ function renderLibrary() {
     (state.stats?.platforms ?? []).some((entry) => entry.platformId === platform.id),
   );
   const stats = state.stats ?? { games: 0, playtimeSeconds: 0 };
-  const readyBios = biosReadyCount();
+  const metadataReady = games.filter((game) => game.synopsis && game.hasCover).length;
+  const missingMetadata = games.filter((game) => !game.synopsis || !game.hasCover).length;
 
   const hero = `
     <section class="hero">
       <div class="hero-copy">
-        <span class="hero-badge">${icon('database')} Sete sistemas · uma biblioteca</span>
-        <h2>Seu acervo clássico,<br>sob controle.</h2>
-        <p>PS1, PS2, NES, Xbox, Xbox 360, PS3 e Game Boy em uma única biblioteca local. BIOS validadas por hash, núcleos pesados isolados e seus saves sempre organizados.</p>
+        <span class="hero-badge">${icon('sparkle')} ${state.platforms.length} sistemas · uma biblioteca</span>
+        <h2>Seu acervo clássico,<br><span class="hero-gradient">sob controle.</span></h2>
+        <p>PS1, PS2, NES, Xbox, Xbox 360, PS3 e Game Boy em um só lugar. BIOS validadas por hash, núcleos pesados isolados e capas e sinopses completadas pela Wikipédia.</p>
         <div class="hero-actions">
           <button class="btn btn-primary" data-action="add-root">${icon('plus')} Adicionar pasta</button>
           <button class="btn" data-action="scan" ${hasRoots ? '' : 'disabled'}>${icon('refresh')} Escanear acervo</button>
+          <button class="btn btn-ghost" data-action="wikipedia-bulk" ${missingMetadata && !state.wikiBusy ? '' : 'disabled'}>
+            ${state.wikiBusy ? '<span class="spinner"></span> Enriquecendo…' : `${icon('globe')} Capas via Wikipédia`}
+          </button>
+        </div>
+        <div class="hero-trust">
+          <span>${icon('hardcore')} BIOS por fingerprint</span>
+          <span>${icon('database')} SQLite local</span>
+          <span>${icon('globe')} Wikipédia pt · en</span>
         </div>
       </div>
-      <div class="console-rail" aria-hidden="true">${consoleTiles()}</div>
+      <div class="hero-visual">
+        <div class="hero-visual-head">
+          <span>Consoles suportados</span>
+          <span class="live-badge"><i></i> ${state.platforms.length} prontos</span>
+        </div>
+        <div class="console-rail">${consoleTiles()}</div>
+        <div class="hero-signature">
+          <img src="./assets/W3Labs.png" alt="W3Labs Gaming" width="54" height="54" decoding="async">
+          <div><strong>W3Labs Gaming</strong><span>Entertainment System · acervo pessoal</span></div>
+        </div>
+      </div>
     </section>`;
 
   const statsGrid = `
     <div class="stats-grid">
-      <div class="stat"><span>Jogos indexados</span><strong>${stats.games ?? games.length}</strong><small>locais</small></div>
-      <div class="stat"><span>Plataformas ativas</span><strong>${totalPlatforms}</strong><small>de ${state.platforms.length}</small></div>
-      <div class="stat"><span>Tempo de jogo</span><strong>${formatPlaytime(stats.playtimeSeconds)}</strong></div>
-      <div class="stat"><span>BIOS validadas</span><strong>${readyBios}</strong><small>revisadas por hash</small></div>
+      <article class="stat">
+        <span class="stat-icon">${icon('library')}</span>
+        <div class="stat-copy"><span>Jogos indexados</span><strong>${stats.games ?? games.length}</strong><small>arquivos locais</small></div>
+      </article>
+      <article class="stat">
+        <span class="stat-icon">${icon('controller')}</span>
+        <div class="stat-copy"><span>Plataformas ativas</span><strong>${totalPlatforms}</strong><small>de ${state.platforms.length} mapeadas</small></div>
+      </article>
+      <article class="stat">
+        <span class="stat-icon">${icon('clock')}</span>
+        <div class="stat-copy"><span>Tempo de jogo</span><strong>${formatPlaytime(stats.playtimeSeconds)}</strong><small>sessões registradas</small></div>
+      </article>
+      <article class="stat">
+        <span class="stat-icon">${icon('image')}</span>
+        <div class="stat-copy"><span>Capas &amp; sinopses</span><strong>${metadataReady}</strong><small>de ${games.length} com metadados</small></div>
+      </article>
     </div>`;
 
   if (!hasRoots && games.length === 0) {
@@ -334,35 +483,40 @@ function renderLibrary() {
       ${hero}
       <div class="empty-state">
         <div class="empty-copy">
-          <div class="empty-icon">${icon('folder')}</div>
+          <div class="empty-logo"><img src="./assets/W3Labs.png" alt="W3Labs Gaming" width="72" height="72"></div>
+          <span class="section-kicker">Primeiro passo</span>
           <h2>Comece pela sua própria coleção.</h2>
           <p>O W3Labs não fornece ROMs, ISOs ou BIOS. Aponte uma pasta com os arquivos que você já possui; o scanner calcula hashes em streaming, sem carregar mídias grandes na memória.</p>
           <button class="btn btn-primary" data-action="add-root">${icon('plus')} Escolher pasta de jogos</button>
           <div class="console-chips">
-            ${state.platforms.map((platform) => `<span class="console-chip">${esc(platform.shortName)}</span>`).join('')}
+            ${state.platforms.map((platform) => `<span class="console-chip">${platformLogo(platform, 'platform-logo--chip')}${esc(platform.shortName)}</span>`).join('')}
           </div>
         </div>
         <div class="empty-steps">
+          <span class="section-kicker">Fluxo do sistema</span>
           <h3>Como funciona</h3>
           <div class="step"><b>1</b><div><strong>Adicione sua pasta</strong><span>O scanner reconhece extensões de cada console.</span></div></div>
           <div class="step"><b>2</b><div><strong>Valide as BIOS</strong><span>PS1, PS2 e Xbox exigem BIOS por região.</span></div></div>
           <div class="step"><b>3</b><div><strong>Jogue com isolamento</strong><span>PS2, Xbox, Xbox 360 e PS3 rodam em processos segregados.</span></div></div>
-          <div class="step"><b>4</b><div><strong>Opcional: metadados</strong><span>Capas e sinopses via APIs com limite de 50 req/min.</span></div></div>
+          <div class="step"><b>4</b><div><strong>Complete capas e sinopses</strong><span>A Wikipédia preenche os metadados a partir do título do jogo.</span></div></div>
         </div>
       </div>`;
   }
 
   const filterChips = `
     <div class="filter-row">
-      <button class="filter-chip ${state.filters.platform === null ? 'is-active' : ''}" data-action="filter-platform" data-platform="">Todas <span class="dot"></span></button>
+      <button class="filter-chip ${state.filters.platform === null ? 'is-active' : ''}" data-action="filter-platform" data-platform="">
+        ${icon('library')} Todas <span class="filter-count">${games.length}</span>
+      </button>
       ${filterPlatforms
-        .map(
-          (platform) => `
+        .map((platform) => {
+          const count = games.filter((game) => game.platformId === platform.id).length;
+          return `
         <button class="filter-chip ${state.filters.platform === platform.id ? 'is-active' : ''}"
           data-action="filter-platform" data-platform="${esc(platform.id)}">
-          <span class="dot" style="background:${esc(platform.color)}"></span>${esc(platform.shortName)}
-        </button>`,
-        )
+          ${platformLogo(platform, 'platform-logo--chip')}${esc(platform.shortName)} <span class="filter-count">${count}</span>
+        </button>`;
+        })
         .join('')}
     </div>`;
 
@@ -370,15 +524,36 @@ function renderLibrary() {
     ? `<div class="game-grid">${games.map(gameCard).join('')}</div>`
     : `<div class="empty-inline">Nenhum jogo encontrado${state.filters.search ? ` para “${esc(state.filters.search)}”` : ''}. Execute um novo escaneamento ou ajuste os filtros.</div>`;
 
+  const wikiHint =
+    missingMetadata > 0
+      ? `<div class="wiki-hint">
+          <span class="wiki-hint-icon">${icon('globe')}</span>
+          <div>
+            <strong>${missingMetadata} ${missingMetadata === 1 ? 'jogo ainda está' : 'jogos ainda estão'} sem capa ou sinopse</strong>
+            <span>A Wikipédia pode identificar o artigo de cada jogo, baixar a capa e preencher a sinopse automaticamente.</span>
+          </div>
+          <button class="btn btn-sm btn-wiki" data-action="wikipedia-bulk" ${state.wikiBusy ? 'disabled' : ''}>
+            ${state.wikiBusy ? '<span class="spinner"></span> Enriquecendo…' : `${icon('sparkle')} Completar agora`}
+          </button>
+        </div>`
+      : '';
+
   return `
     ${hero}
     ${statsGrid}
-    <div class="section-head">
+    ${wikiHint}
+    <div class="section-head library-head">
       <div>
+        <span class="section-kicker">Coleção local</span>
         <h3>Sua biblioteca</h3>
-        <p>${games.length} título${games.length === 1 ? '' : 's'} ${state.filters.search ? 'no filtro atual' : 'disponíveis'} · ordenados por favoritos</p>
+        <p>${games.length} título${games.length === 1 ? '' : 's'} ${state.filters.search ? 'no filtro atual' : 'disponíveis'} · favoritos primeiro</p>
       </div>
-      <button class="btn btn-ghost btn-sm" data-action="scan">${icon('refresh')} Atualizar</button>
+      <div class="library-tools">
+        <button class="btn btn-sm btn-wiki" data-action="wikipedia-bulk" ${state.wikiBusy || missingMetadata === 0 ? 'disabled' : ''}>
+          ${state.wikiBusy ? '<span class="spinner"></span> Enriquecendo…' : `${icon('globe')} Completar com Wikipédia`}
+        </button>
+        <button class="btn btn-ghost btn-sm" data-action="scan">${icon('refresh')} Atualizar</button>
+      </div>
     </div>
     ${filterChips}
     ${grid}
@@ -393,13 +568,18 @@ function gameCard(game, index = 0) {
       <div class="game-cover">
         ${game.coverUrl ? `<img src="${esc(game.coverUrl)}" alt="" loading="lazy">` : ''}
         <span class="cover-monogram">${esc(initials(game.title))}</span>
-        <span class="platform-badge">${esc(platform.shortName)}</span>
+        <span class="cover-shade"></span>
+        <span class="platform-badge">${platformLogo(platform, 'platform-logo--badge')}${esc(platform.shortName)}</span>
         <span class="favorite-mark ${game.favorite ? 'is-on' : ''}">${icon('star')}</span>
+        ${game.metadataSource ? `<span class="source-flag" title="Fonte: ${esc(METADATA_SOURCE_LABELS[game.metadataSource] ?? game.metadataSource)}">${icon('globe')}</span>` : ''}
         <span class="game-hover"><span>${formatPlaytime(game.playtimeSeconds)}</span><span class="play-dot">${icon('play')}</span></span>
       </div>
       <div class="game-meta">
-        <strong>${esc(game.title)}</strong>
-        <span>${esc(game.regionLabel ?? 'Região ?')}<i></i>${esc(game.genre || platform.name)}</span>
+        <span class="game-title-row">
+          <strong>${esc(game.title)}</strong>
+          ${game.releaseYear ? `<span class="game-year">${game.releaseYear}</span>` : ''}
+        </span>
+        <span class="game-sub">${esc(game.regionLabel ?? 'Região ?')}<i></i>${esc(game.genre || platform.name)}</span>
       </div>
     </button>`;
 }
@@ -420,7 +600,7 @@ function renderBios() {
       return `
         <article class="bios-card" style="--platform-color:${esc(platform.color)}">
           <div class="bios-card-head">
-            <div class="bios-platform-icon">${esc(platform.shortName)}</div>
+            ${platformLogo(platform, 'bios-platform-logo')}
             <div>
               <strong>${esc(entry.fullName)}</strong>
               <span>${entry.required ? 'BIOS obrigatória por região' : entry.recommended ? 'Firmware recomendado' : 'Boot ROM opcional'}</span>
@@ -492,7 +672,7 @@ function renderBios() {
     <div class="bios-grid">${cards}</div>
 
     <div class="section-head">
-      <div><h3>Arquivos validados</h3><p>${state.bios.length} impressão(ões) digital(is) no banco local</p></div>
+      <div><h3>Arquivos validados</h3><p>${biosReadyCount()} de ${state.bios.length} impressão(ões) digital(is) validada(s)</p></div>
     </div>
     ${
       state.bios.length
@@ -505,188 +685,225 @@ function renderBios() {
   `;
 }
 
+function shortGuid(guid) {
+  const value = String(guid ?? '');
+  if (!value) return '—';
+  return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+}
+
+function hex4(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number.toString(16).padStart(4, '0') : null;
+}
+
+function freePlayerSlots() {
+  const used = new Set(state.profiles.map((profile) => profile.playerIndex));
+  return [1, 2, 3, 4].filter((player) => !used.has(player));
+}
+
+function renderControllerDevice(device, boundProfile) {
+  const category = CONTROLLER_CATEGORIES[device.category] ?? CONTROLLER_CATEGORIES.gamepad;
+  const apiLabel = CONTROLLER_API_LABELS[device.api] ?? String(device.api ?? '—').toUpperCase();
+  const sourceLabel = CONTROLLER_SOURCES[device.source] ?? device.source ?? 'Nativo';
+  const vendor = hex4(device.vendorId);
+  const product = hex4(device.productId);
+  const offline = device.connected === false;
+
+  return `
+    <article class="device-card ${boundProfile ? 'is-bound' : ''} ${offline ? 'is-offline' : ''}" data-category="${esc(device.category ?? 'gamepad')}">
+      <span class="device-icon">${icon(category.icon)}</span>
+      <div class="device-main">
+        <div class="device-title">
+          <strong title="${esc(device.id)}">${esc(device.id)}</strong>
+          ${boundProfile ? `<span class="bound-tag">P${boundProfile.playerIndex}</span>` : ''}
+        </div>
+        <div class="device-meta">
+          <span class="meta-tag">${esc(category.label)}</span>
+          <span class="meta-tag">${esc(apiLabel)}</span>
+          <span class="meta-tag">${esc(sourceLabel)}</span>
+          ${vendor && product ? `<span class="meta-tag mono">${vendor}:${product}</span>` : ''}
+        </div>
+        <div class="device-guid">
+          <span title="${esc(device.hardwareGuid)}">${esc(shortGuid(device.hardwareGuid))}</span>
+          <span class="guid-origin">${esc(GUID_ORIGIN_LABELS[device.guidOrigin] ?? 'GUID')}</span>
+        </div>
+      </div>
+      <div class="device-action">
+        ${
+          boundProfile
+            ? `<span class="status-pill ok">P${boundProfile.playerIndex} vinculado</span>`
+            : `<button class="btn btn-sm btn-primary" data-action="bind-controller" data-key="${esc(device.key)}">Vincular</button>`
+        }
+      </div>
+    </article>`;
+}
+
+function renderPlayerSlot(player) {
+  const profile = state.profiles.find((entry) => entry.playerIndex === player);
+  if (!profile) {
+    return `
+      <div class="player-slot is-empty">
+        <div class="player-slot-head">
+          <span class="player-badge">P${player}</span>
+          <div><strong>Jogador ${player}</strong><span>Vaga livre</span></div>
+        </div>
+        <div class="player-slot-empty">
+          <span>Nenhum controle vinculado</span>
+          <small>${state.detected?.devices?.length ? 'Use “Vincular” em um dispositivo ao lado.' : 'Conecte um controle e pressione um botão.'}</small>
+        </div>
+      </div>`;
+  }
+
+  const keyboard = profile.api === 'keyboard';
+  const matched = keyboard
+    ? null
+    : state.detected?.devices?.find((device) => device.hardwareGuid === profile.hardwareGuid);
+  const effectiveApi = matched?.api ?? profile.api;
+  const apiLabel = CONTROLLER_API_LABELS[effectiveApi] ?? String(effectiveApi ?? '').toUpperCase();
+  const deviceLabel = profile.productName ?? matched?.productName ?? profile.name;
+  return `
+    <div class="player-slot is-bound">
+      <div class="player-slot-head">
+        <span class="player-badge ${keyboard ? 'is-keyboard' : ''}">${keyboard ? icon('keyboard') : `P${player}`}</span>
+        <div><strong>${esc(profile.name)}</strong><span>${esc(apiLabel)}</span></div>
+        <button class="ghost-icon" data-action="delete-profile" data-id="${esc(profile.id)}" title="Remover perfil">${icon('trash')}</button>
+      </div>
+      <div class="player-device">
+        <span class="player-device-name" title="${esc(deviceLabel)}">${esc(deviceLabel)}</span>
+        <span class="player-device-guid" title="${esc(profile.hardwareGuid)}">${esc(shortGuid(profile.hardwareGuid))}</span>
+      </div>
+      <div class="player-slot-actions">
+        <button class="btn btn-sm btn-ghost" data-action="edit-mapping" data-id="${esc(profile.id)}">${icon('edit')} Mapeamento</button>
+      </div>
+    </div>`;
+}
+
 function renderControllers() {
-  const profiles = state.profiles;
+  const profiles = [...state.profiles].sort((a, b) => a.playerIndex - b.playerIndex);
+  const boundByGuid = new Map(profiles.map((profile) => [profile.hardwareGuid, profile]));
   const detected = state.detected;
   const devices = detected?.devices ?? [];
+  const sources = detected?.sources ?? [];
+  const linked = profiles.filter((profile) => profile.api !== 'keyboard').length;
+  const free = freePlayerSlots();
+  const guidance =
+    detected?.guidance ??
+    'O detector consulta XInput e HID no sistema e usa o Gamepad API como reforço. Controles sem GUID do sistema recebem um identificador derivado estável.';
+
+  const plural = (count, one, many) => (count === 1 ? one : many);
+  const stats = [
+    {
+      icon: 'controller',
+      value: devices.length,
+      label: plural(devices.length, 'dispositivo', 'dispositivos'),
+      hint: devices.length ? 'conectados agora' : 'aguardando conexão',
+    },
+    {
+      icon: 'hardcore',
+      value: linked,
+      label: plural(linked, 'vinculado', 'vinculados'),
+      hint: 'com perfil ativo',
+    },
+    {
+      icon: 'plus',
+      value: free.length,
+      label: plural(free.length, 'vaga', 'vagas'),
+      hint: 'de 4 jogadores',
+    },
+    {
+      icon: 'usb',
+      value: sources.length,
+      label: plural(sources.length, 'fonte', 'fontes'),
+      hint: sources.length
+        ? sources.map((source) => CONTROLLER_SOURCES[source] ?? source).join(' · ')
+        : 'nenhuma disponível',
+    },
+  ];
+
+  const devicesBody = devices.length
+    ? `<div class="device-list">${devices
+        .map((device) => renderControllerDevice(device, boundByGuid.get(device.hardwareGuid)))
+        .join('')}</div>`
+    : `<div class="controller-empty">
+        <span class="controller-empty-icon">${icon(state.detecting ? 'refresh' : 'controller')}</span>
+        <strong>${state.detecting ? 'Procurando controles…' : detected ? 'Nenhum controle conectado' : 'Detectando automaticamente…'}</strong>
+        <p>${
+          state.detecting
+            ? 'Consultando XInput, HID e Gamepad API. Isso leva só um instante.'
+            : 'Conecte via USB ou Bluetooth e pressione qualquer botão do controle para que o sistema o reconheça.'
+        }</p>
+        <button class="btn btn-sm" data-action="detect-controllers" ${state.detecting ? 'disabled' : ''}>${icon('refresh')} Detectar novamente</button>
+      </div>`;
+
   return `
     <div class="page-head">
       <div>
         <span class="eyebrow">Hardware de entrada</span>
         <h1>Controles</h1>
-        <p>Perfis de jogador 1–4, compatíveis com XInput, DirectInput e teclado.</p>
+        <p>Reconhecimento automático via XInput, DirectInput e Gamepad API.</p>
       </div>
       <div class="page-actions">
-        <button class="btn" data-action="create-keyboard">${icon('plus')} Perfil de teclado</button>
-        <button class="btn btn-primary" data-action="detect-controllers">${icon('refresh')} Detectar controles</button>
+        <button class="btn" data-action="create-keyboard" ${free.length ? '' : 'disabled'}>${icon('keyboard')} Perfil de teclado</button>
+        <button class="btn btn-primary" data-action="detect-controllers" ${state.detecting ? 'disabled' : ''}>
+          ${state.detecting ? '<span class="spinner"></span> Detectando…' : `${icon('refresh')} Detectar agora`}
+        </button>
       </div>
     </div>
 
-    <div class="legal-note">
-      ${icon('hardcore')}
-      <div>
-        <strong>Regra de GUID de hardware</strong>
-        <p>Um controle físico só é vinculado a um jogador quando o sistema operacional reporta um GUID válido. Um ID amigável do Chromium não é suficiente; o backend rejeita GUIDs ausentes, malformados ou já vinculados.</p>
-      </div>
+    <div class="controller-stats">
+      ${stats
+        .map(
+          (stat) => `
+        <div class="controller-stat">
+          <span class="controller-stat-icon">${icon(stat.icon)}</span>
+          <div>
+            <strong>${stat.value}</strong>
+            <span>${esc(stat.label)}</span>
+            <small>${esc(stat.hint)}</small>
+          </div>
+        </div>`,
+        )
+        .join('')}
     </div>
 
     <div class="controller-layout">
-      <div class="panel">
+      <section class="panel">
         <div class="panel-head">
-          <div><h3>Dispositivos detectados</h3><p>${detected ? `${devices.length} dispositivo(s) no último diagnóstico` : 'Execute a detecção para consultar o Gamepad API'}</p></div>
-          ${detected ? `<span class="status-pill ${devices.some((device) => device.bindable) ? 'ok' : 'warn'}">${devices.filter((device) => device.bindable).length} vinculável(is)</span>` : ''}
-        </div>
-        <div class="panel-body">
-          ${
-            devices.length
-              ? `<div class="device-list">${devices
-                  .map(
-                    (device) => `
-                  <div class="device">
-                    <span class="device-icon">${icon('controller')}</span>
-                    <div>
-                      <strong>${esc(device.id)}</strong>
-                      <span>${esc(device.mapping)} · ${device.buttons} botões · ${device.axes} eixos</span>
-                    </div>
-                    ${
-                      device.bindable
-                        ? `<button class="btn btn-sm btn-primary" data-action="bind-controller" data-index="${device.index}">Vincular</button>`
-                        : '<span class="status-pill warn">GUID ausente</span>'
-                    }
-                  </div>`,
-                  )
-                  .join('')}</div>`
-              : `<div class="empty-inline">${detected ? 'Nenhum controle reportado pelo sistema no momento.' : 'Clique em “Detectar controles”. O Chromium costuma expor o dispositivo sem GUID; nesse caso, o vínculo permanece bloqueado por segurança.'}</div>`
-          }
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head"><div><h3>Perfis de jogador</h3><p>Máximo de quatro perfis</p></div><span class="status-pill">${profiles.length}/4</span></div>
-        <div class="panel-body">
-          ${
-            profiles.length
-              ? profiles
-                  .map(
-                    (profile) => `
-                <div class="profile-card">
-                  <div class="profile-head">
-                    <span class="player-badge">P${profile.playerIndex}</span>
-                    <div><strong>${esc(profile.name)}</strong><br><span>${esc(profile.api.toUpperCase())}</span></div>
-                    <button class="ghost-icon" data-action="delete-profile" data-id="${esc(profile.id)}" title="Remover">${icon('trash')}</button>
-                  </div>
-                  <div class="guid-text">${esc(profile.hardwareGuid)}</div>
-                  <div class="profile-actions">
-                    <button class="btn btn-sm" data-action="edit-mapping" data-id="${esc(profile.id)}">${icon('edit')} Mapeamento</button>
-                  </div>
-                </div>`,
-                  )
-                  .join('')
-              : '<div class="empty-inline">Nenhum perfil. Crie um perfil de teclado ou vincule um controle com GUID validado.</div>'
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="panel mt-16">
-      <div class="panel-body" style="color:var(--muted);font-size:10px;line-height:1.6">
-        ${icon('info')} <strong style="color:var(--text)">Sobre o bridge de entrada:</strong>
-        o renderer usa o Gamepad API apenas para diagnóstico. Para que XInput/DirectInput exponha o GUID estável do hardware,
-        conecte um provider nativo de SDL/HID ao backend. Sem GUID reportado, nenhum perfil físico é criado.
-      </div>
-    </div>
-  `;
-}
-
-function renderAchievements() {
-  const ra = state.ra ?? { connected: false, hardcore: false };
-  if (!ra.connected) {
-    return `
-      <div class="page-head">
-        <div>
-          <span class="eyebrow">Conquistas e histórico</span>
-          <h1>RetroAchievements</h1>
-          <p>Conecte sua conta para acompanhar pontos e travar Save States no modo Hardcore.</p>
-        </div>
-      </div>
-      <div class="ra-hero">
-        <div class="ra-hero-main">
-          <div class="ra-mark">${icon('trophy')}</div>
-          <h2>Conecte sua conta.</h2>
-          <p>O sistema valida as credenciais diretamente na API do RetroAchievements e armazena a Web API Key cifrada em AES-256-GCM. Nenhuma credencial é enviada a terceiros pelo W3Labs.</p>
-          <form id="raConnectForm" class="form-grid" style="max-width:400px">
-            <div class="field">
-              <label for="raUsername">Usuário</label>
-              <input id="raUsername" name="username" autocomplete="username" placeholder="seu_usuario" required>
-            </div>
-            <div class="field">
-              <label for="raApiKey">Web API Key</label>
-              <input id="raApiKey" name="apiKey" type="password" autocomplete="off" placeholder="chave de 32 caracteres" required>
-              <small>Disponível nas configurações do seu perfil em retroachievements.org. A chave fica cifrada localmente.</small>
-            </div>
-            <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('hardcore')} Conectar conta</button></div>
-          </form>
-        </div>
-        <div class="ra-side">
-          <h3>O que é validado</h3>
-          <div class="step"><b>1</b><div><strong>Conexão ativa</strong><span>Hardcore só pode ser ativado com a API online.</span></div></div>
-          <div class="step"><b>2</b><div><strong>Trava imediata</strong><span>Ao ativar Hardcore, Save/Load State são bloqueados no backend e na UI.</span></div></div>
-          <div class="step"><b>3</b><div><strong>Sem atalhos</strong><span>Nenhuma criação, sobrescrita ou carregamento de estado é permitido.</span></div></div>
-        </div>
-      </div>`;
-  }
-
-  const profile = ra.profile ?? {};
-  return `
-    <div class="page-head">
-      <div>
-        <span class="eyebrow">Conta conectada</span>
-        <h1>RetroAchievements</h1>
-        <p>${esc(ra.username)} · ${ra.online ? 'online' : 'verificação pendente'}</p>
-      </div>
-      <div class="page-actions">
-        <button class="btn" data-action="ra-refresh">${icon('refresh')} Atualizar perfil</button>
-        <button class="btn btn-danger" data-action="ra-disconnect">Desconectar</button>
-      </div>
-    </div>
-    <div class="ra-hero">
-      <div class="ra-hero-main">
-        <div class="ra-mark">${icon('trophy')}</div>
-        <h2>${esc(profile.user ?? ra.username)}</h2>
-        <p>${esc(profile.motto || 'Sua jornada de conquistas, registrada com integridade.')}</p>
-        <div class="score-grid">
-          <div class="score"><span>Pontos</span><strong>${profile.points ?? 0}</strong></div>
-          <div class="score"><span>TruePoints</span><strong>${profile.truePoints ?? 0}</strong></div>
-        </div>
-        <div class="info-box">Abra um jogo na biblioteca para vincular o ID do RetroAchievements e sincronizar conquistas.</div>
-      </div>
-      <div class="ra-side">
-        <h3>Perfil</h3>
-        <div class="profile-mini">
-          ${
-            profile.avatar
-              ? `<img src="${esc(profile.avatar)}" alt="">`
-              : `<span class="fallback-avatar">${esc(String(ra.username).slice(0, 2).toUpperCase())}</span>`
-          }
-          <div><strong>${esc(ra.username)}</strong><span>${ra.online ? 'API online' : 'API não verificada'}</span></div>
-        </div>
-        <div class="hardcore-panel ${ra.hardcore ? 'is-active' : ''}">
           <div>
-            <strong>Modo Hardcore</strong>
-            <p>${ra.hardcore ? 'Ativo: Save States desabilitados imediatamente em todo o aplicativo.' : 'Quando ativado, cria e carrega estados ficam bloqueados. Exige conexão ativa.'}</p>
+            <h3>Dispositivos conectados</h3>
+            <p>${devices.length ? `${devices.length} ${plural(devices.length, 'dispositivo reconhecido', 'dispositivos reconhecidos')}` : 'Detecção automática ativa'}</p>
           </div>
-          <button class="toggle-button ${ra.hardcore ? 'is-active' : ''}" data-action="ra-toggle-hardcore" aria-pressed="${ra.hardcore}"><span></span></button>
+          <span class="live-badge"><i></i> ao vivo</span>
+        </div>
+        <div class="panel-body">${devicesBody}</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Jogadores</h3>
+            <p>${profiles.length} de 4 perfis vinculados</p>
+          </div>
+          <span class="status-pill ${profiles.length ? 'ok' : ''}">${profiles.length}/4</span>
+        </div>
+        <div class="panel-body">
+          <div class="player-slots">${[1, 2, 3, 4].map(renderPlayerSlot).join('')}</div>
+        </div>
+      </section>
+    </div>
+
+    <details class="panel controller-diagnostic">
+      <summary>${icon('info')} Como a detecção funciona</summary>
+      <div class="panel-body">
+        <p>${esc(guidance)}</p>
+        <div class="diagnostic-chips">
+          <span class="meta-tag">${detected?.counts?.verified ?? 0} com GUID do sistema</span>
+          <span class="meta-tag">${devices.length} vinculável(is)</span>
+          ${sources.map((source) => `<span class="meta-tag">${esc(CONTROLLER_SOURCES[source] ?? source)}</span>`).join('')}
         </div>
       </div>
-    </div>
-    <div class="panel">
-      <div class="panel-head"><div><h3>Integração de conquistas</h3><p>Tracker e patches são responsabilidade do bridge do núcleo</p></div></div>
-      <div class="panel-body" style="color:var(--muted);font-size:10px;line-height:1.65">
-        O orquestrador mantém a sessão, o vínculo do jogo e o bloqueio Hardcore. A leitura de memória e o envio de conquistas
-        usam o contrato do núcleo (RetroAchievements/rcheevos). Sem bridge, a conta e o bloqueio de Save States continuam funcionais,
-        mas o tracker em tempo real não é ativado.
-      </div>
-    </div>`;
+    </details>
+  `;
 }
 
 function autoInstallerCard(entry) {
@@ -702,7 +919,7 @@ function autoInstallerCard(entry) {
   return `
     <div class="install-card" id="install-card-${esc(entry.coreId)}">
       <div class="install-card-head">
-        <div class="install-icon">${icon('database')}</div>
+        <div class="install-icon">${coreMark(entry.coreId, entry.label)}</div>
         <div class="install-title">
           <strong>${esc(entry.label)}</strong>
           <span>${entry.platforms.map((platformId) => esc(platformOf(platformId).shortName)).join(' · ')}</span>
@@ -748,12 +965,27 @@ function renderSettings() {
     ['aa', 'Anti-aliasing'],
   ];
   const cores = state.cores.length ? state.cores : (state.info?.cores ?? []);
+  const installed = new Set(cores.filter((core) => core.installed).map((core) => core.id));
+  const coverage = (setting) => {
+    const entry = state.info?.preferenceCoverage?.[setting];
+    const matches = (entry?.cores ?? []).filter((core) => installed.has(core.coreId));
+    if (!matches.length) {
+      return installed.size
+        ? 'Nenhum núcleo instalado aceita esta preferência.'
+        : 'Instale um núcleo para ver o suporte.';
+    }
+    return matches
+      .map((core) =>
+        core.kinds.includes('cli') ? `${core.label}: linha de comando` : `${core.label}: arquivo de sessão*`,
+      )
+      .join(' · ');
+  };
   return `
     <div class="page-head">
       <div>
         <span class="eyebrow">Preferências locais</span>
         <h1>Configurações</h1>
-        <p>Vídeo, áudio, metadados e caminhos do sistema.</p>
+        <p>Vídeo, áudio e caminhos do sistema.</p>
       </div>
       <div class="page-actions">
         <button class="btn" data-action="open-data">${icon('folder')} Abrir dados</button>
@@ -765,24 +997,44 @@ function renderSettings() {
       <div>
         <section class="settings-section">
           <h3>${icon('monitor')} Vídeo</h3>
-          <p>Preferências repassadas ao núcleo no momento do launch.</p>
+          <p>Cada opção é entregue ao núcleo apenas quando o binário do emulador expõe aquele controle; o suporte real está indicado em cada linha.</p>
           <div class="setting-row">
-            <div><strong>Resolução</strong><small>Nativa ou escalonada</small></div>
+            <div>
+              <strong>Resolução</strong>
+              <small>Tela cheia ou janela; dimensão quando o núcleo aceita</small>
+              <small class="coverage">${esc(coverage('video.resolution'))}</small>
+            </div>
             <select data-setting="video.resolution">
               ${resolutionOptions.map(([value, label]) => `<option value="${value}" ${settings['video.resolution'] === value ? 'selected' : ''}>${label}</option>`).join('')}
             </select>
           </div>
           <div class="setting-row">
-            <div><strong>Filtro pós-processamento</strong><small>CRT, scanlines ou bilinear</small></div>
+            <div>
+              <strong>Filtro pós-processamento</strong>
+              <small>CRT, scanlines ou bilinear</small>
+              <small class="coverage">${esc(coverage('video.filter'))}</small>
+            </div>
             <select data-setting="video.filter">
               ${filterOptions.map(([value, label]) => `<option value="${value}" ${settings['video.filter'] === value ? 'selected' : ''}>${label}</option>`).join('')}
             </select>
           </div>
           <div class="setting-row">
-            <div><strong>Proporção</strong><small>Aspect ratio de saída</small></div>
+            <div>
+              <strong>Proporção</strong>
+              <small>Aspect ratio de saída</small>
+              <small class="coverage">${esc(coverage('video.aspectRatio'))}</small>
+            </div>
             <select data-setting="video.aspectRatio">
               ${['4:3', '16:9', 'stretch'].map((value) => `<option value="${value}" ${settings['video.aspectRatio'] === value ? 'selected' : ''}>${value === 'stretch' ? 'Esticar' : value}</option>`).join('')}
             </select>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>Sincronismo vertical</strong>
+              <small>Elimina tearing ao custo de latência</small>
+              <small class="coverage">${esc(coverage('video.vsync'))}</small>
+            </div>
+            <input type="checkbox" ${settings['video.vsync'] ? 'checked' : ''} data-setting="video.vsync">
           </div>
         </section>
 
@@ -790,51 +1042,34 @@ function renderSettings() {
           <h3>${icon('controller')} Áudio e entrada</h3>
           <p>Volume global e dispositivo de saída.</p>
           <div class="setting-row">
-            <div><strong>Volume global</strong><small>0 a 100</small></div>
+            <div>
+              <strong>Volume global</strong>
+              <small>0 a 100</small>
+              <small class="coverage">${esc(coverage('audio.volume'))}</small>
+            </div>
             <input type="number" min="0" max="100" value="${Number(settings['audio.volume'] ?? 80)}" data-setting="audio.volume">
           </div>
           <div class="setting-row">
-            <div><strong>Dispositivo de áudio</strong><small>Saída padrão do sistema</small></div>
+            <div>
+              <strong>Silenciar</strong>
+              <small>Zera a saída do núcleo sem tocar no volume salvo</small>
+              <small class="coverage">${esc(coverage('audio.mute'))}</small>
+            </div>
+            <input type="checkbox" ${settings['audio.mute'] ? 'checked' : ''} data-setting="audio.mute">
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>Dispositivo de áudio</strong>
+              <small>Saída padrão do sistema</small>
+              <small class="coverage">${esc(coverage('audio.device'))}</small>
+            </div>
             <select data-setting="audio.device">
               <option value="default" ${settings['audio.device'] === 'default' ? 'selected' : ''}>Padrão do sistema</option>
             </select>
           </div>
-        </section>
-
-        <section class="settings-section">
-          <h3>${icon('search')} Metadados</h3>
-          <p>APIs externas protegidas por janela deslizante de 50 requisições/minuto.</p>
-          <div class="setting-row">
-            <div><strong>Provedor preferido</strong><small>Fallback automático para o outro provedor</small></div>
-            <select data-setting="metadata.provider">
-              <option value="screenscraper" ${settings['metadata.provider'] === 'screenscraper' ? 'selected' : ''}>ScreenScraper</option>
-              <option value="igdb" ${settings['metadata.provider'] === 'igdb' ? 'selected' : ''}>IGDB</option>
-            </select>
+          <div class="info-box mt-12">
+            * Quando o emulador não tem opção de linha de comando, o W3Labs copia o arquivo de configuração que o próprio emulador gerou, grava somente as chaves verificadas naquele binário e aponta o lançamento para essa cópia. O emulador precisa ter aberto pelo menos uma vez; sem esse arquivo, a preferência é reportada como não aplicada na barra da sessão ativa.
           </div>
-          <form class="form-grid" data-metadata-form="screenscraper">
-            <div class="form-row">
-              <div class="field"><label>ScreenScraper dev ID</label><input name="devId" placeholder="devid" autocomplete="off"></div>
-              <div class="field"><label>ScreenScraper dev password</label><input name="devPassword" type="password" autocomplete="off"></div>
-            </div>
-            <div class="form-row">
-              <div class="field"><label>Usuário (opcional)</label><input name="user" autocomplete="off"></div>
-              <div class="field"><label>Senha do usuário (opcional)</label><input name="password" type="password" autocomplete="off"></div>
-            </div>
-            <div class="form-actions">
-              ${state.metadata?.screenscraperConfigured ? '<span class="status-pill ok">Configurado</span>' : ''}
-              <button class="btn btn-sm" type="submit">Salvar ScreenScraper</button>
-            </div>
-          </form>
-          <form class="form-grid mt-16" data-metadata-form="igdb">
-            <div class="form-row">
-              <div class="field"><label>IGDB Client ID</label><input name="clientId" autocomplete="off"></div>
-              <div class="field"><label>IGDB Client Secret</label><input name="clientSecret" type="password" autocomplete="off"></div>
-            </div>
-            <div class="form-actions">
-              ${state.metadata?.igdbConfigured ? '<span class="status-pill ok">Configurado</span>' : ''}
-              <button class="btn btn-sm" type="submit">Salvar IGDB</button>
-            </div>
-          </form>
         </section>
       </div>
 
@@ -878,10 +1113,10 @@ function renderSettings() {
         <section class="settings-section">
           <h3>${icon('info')} Sobre</h3>
           <div class="about-block">
-            <div class="brand-mark"><span>W</span><span>3</span></div>
+            <div class="brand-mark"><img class="brand-logo" src="./assets/W3Labs.png" alt="W3Labs Gaming" width="120" height="120"></div>
             <div><strong>W3Labs Entertainment System</strong><span>v${esc(state.info?.version ?? '0.1.0')} · Electron ${esc(api.versions.electron)}</span></div>
           </div>
-          <p class="mt-12" style="color:var(--muted-2);font-size:9px;line-height:1.6">Banco SQLite em WAL, IPC assíncrono com contextIsolation e sandbox, hashes em streaming e isolamento de núcleos pesados.</p>
+          <p class="mt-12" style="color:var(--muted-2);font-size:9px;line-height:1.6">Banco SQLite em WAL, IPC assíncrono com contextIsolation e sandbox, hashes em streaming, isolamento de núcleos pesados e metadados via Wikipédia.</p>
         </section>
       </div>
     </div>`;
@@ -899,11 +1134,15 @@ function openModal(html, className = '') {
   if (closeButton) closeButton.focus();
 }
 
+/**
+ * Fecha o modal e, se houver uma confirmação pendente, resolve a promise
+ * correspondente. Sem isso, fechar via ESC/backdrop deixaria a promise
+ * pendurada e o handler `await askConfirm()` nunca retornaria.
+ */
 function closeModal({ resolve = false } = {}) {
-  if (state.confirmResolve) {
-    if (resolve) state.confirmResolve(true);
-    state.confirmResolve = null;
-  }
+  const pending = state.confirmResolve;
+  state.confirmResolve = null;
+  if (typeof pending === 'function') pending(resolve);
   $('#modalRoot').innerHTML = '';
   state.modal = null;
   state.pendingLaunch = null;
@@ -924,14 +1163,9 @@ function renderGameModal() {
   const { game, saves } = state.modal;
   const platform = platformOf(game.platformId);
   const active = state.active?.gameId === game.id ? state.active : null;
-  const hardcore = Boolean(state.ra?.hardcore);
   const bootGuard = active?.bootGuard?.active ? active.bootGuard : null;
   const canStates =
-    Boolean(active) &&
-    active.capabilities?.saveState &&
-    active.capabilities?.loadState &&
-    !hardcore &&
-    !bootGuard;
+    Boolean(active) && active.capabilities?.saveState && active.capabilities?.loadState && !bootGuard;
   const savesBySlot = new Map(saves.map((entry) => [entry.slot, entry]));
   const slots = Array.from({ length: 8 }, (_, slot) => {
     const entry = savesBySlot.get(slot);
@@ -951,8 +1185,9 @@ function renderGameModal() {
     `
     <div class="modal-head">
       <div>
+        <span class="modal-eyebrow">${platformLogo(platform, 'platform-logo--inline')} ${esc(platform.name)}</span>
         <h2>${esc(game.title)}</h2>
-        <p>${esc(platform.name)} · ${esc(game.fileName)}</p>
+        <p>${esc(game.fileName)}</p>
       </div>
       <button class="icon-button" data-action="close-modal" aria-label="Fechar">${icon('close')}</button>
     </div>
@@ -961,9 +1196,10 @@ function renderGameModal() {
         <div class="detail-cover" style="--platform-color:${esc(platform.color)}">
           ${game.coverUrl ? `<img src="${esc(game.coverUrl)}" alt="">` : ''}
           <span class="cover-monogram">${esc(initials(game.title))}</span>
+          <span class="detail-cover-logo">${platformLogo(platform)}</span>
         </div>
         <div class="detail-info">
-          <span class="platform-badge" style="position:static;display:inline-block;margin-bottom:6px">${esc(platform.shortName)}</span>
+          <span class="platform-badge" style="position:static;display:inline-block;margin-bottom:8px">${platformLogo(platform, 'platform-logo--badge')}${esc(platform.shortName)}</span>
           <h2>${esc(game.title)}</h2>
           <div class="detail-sub">
             <span>${esc(game.regionLabel)}</span><i></i><span>${game.releaseYear || 'Ano ?'}</span><i></i>
@@ -975,7 +1211,11 @@ function renderGameModal() {
             ${game.discNumber > 1 ? `<span class="tag">Disco ${game.discNumber}</span>` : ''}
             <span class="tag">SHA-1 ${esc(String(game.romHash).slice(0, 8))}</span>
           </div>
-          <p class="detail-synopsis">${game.synopsis ? esc(game.synopsis) : 'Sem sinopse. Use “Buscar metadados” para consultar as APIs configuradas.'}</p>
+          <p class="detail-synopsis ${game.synopsis ? '' : 'is-empty'}">${game.synopsis ? esc(game.synopsis) : 'Sem sinopse ainda. Use “Wikipédia” para identificar o artigo, baixar a capa e preencher esta descrição automaticamente.'}</p>
+          <div class="detail-provenance">
+            ${metadataSource(game)}
+            <span>${game.metadataSource ? `Metadados atualizados em ${formatDate(game.updatedAt)}` : 'Nenhuma fonte externa vinculada'}</span>
+          </div>
           <div class="detail-actions">
             ${
               active
@@ -984,8 +1224,8 @@ function renderGameModal() {
                    <button class="btn btn-danger" data-action="stop-session">${icon('stop')} Encerrar</button>`
                 : `<button class="btn btn-primary" data-action="launch">${icon('play')} Iniciar jogo</button>`
             }
+            <button class="btn btn-wiki" data-action="wikipedia">${icon('globe')} Wikipédia</button>
             <button class="btn" data-action="toggle-favorite">${icon('star')} ${game.favorite ? 'Favorito' : 'Favoritar'}</button>
-            <button class="btn" data-action="scrape">${icon('refresh')} Metadados</button>
           </div>
           <div class="detail-meta-row">
             <div><span>Plataforma</span>
@@ -1009,26 +1249,11 @@ function renderGameModal() {
       <div class="save-section">
         <h3>${icon('save')} Save States</h3>
         <p>Armazenamento obrigatório em <span class="mono">saves/${esc(platform.id)}/${esc(String(game.romHash).slice(0, 10))}…/[slot].state</span></p>
-        ${hardcore ? `<div class="hardcore-banner">${icon('hardcore')} Modo Hardcore ativo: criação e carregamento de estados estão bloqueados.</div>` : ''}
-        ${bootGuard ? `<div class="hardcore-banner" style="border-color:rgba(244,184,96,.22);background:rgba(244,184,96,.05);color:#dfc08f">${icon('clock')} <span id="bootGuardText">Boot da BIOS em andamento · ${bootGuard.remainingSeconds}s restantes</span></div>` : ''}
-        ${!hardcore && !bootGuard && active && !active.capabilities?.saveState ? `<div class="hardcore-banner" style="border-color:var(--line);background:rgba(255,255,255,.02);color:var(--muted)">${icon('info')} O núcleo atual não expõe bridge de Save State.</div>` : ''}
-        ${!active && !hardcore ? `<div class="hardcore-banner" style="border-color:var(--line);background:rgba(255,255,255,.02);color:var(--muted)">${icon('info')} Inicie o jogo para habilitar os estados.</div>` : ''}
+        ${bootGuard ? `<div class="hardcore-banner is-warning">${icon('clock')} <span id="bootGuardText">Boot da BIOS em andamento · ${bootGuard.remainingSeconds}s restantes</span></div>` : ''}
+        ${!bootGuard && active && !active.capabilities?.saveState ? `<div class="hardcore-banner is-muted">${icon('info')} O núcleo atual não expõe bridge de Save State.</div>` : ''}
+        ${!active ? `<div class="hardcore-banner is-muted">${icon('info')} Inicie o jogo para habilitar os estados.</div>` : ''}
         <div class="save-slots">${slots}</div>
       </div>
-
-      ${
-        state.ra?.connected
-          ? `<div class="save-section">
-              <h3>${icon('trophy')} RetroAchievements</h3>
-              <p>Vincule este jogo ao ID da RA para sincronizar conquistas. O vínculo não altera o arquivo.</p>
-              <div class="inline-form">
-                <div class="field"><label for="raGameId">ID do jogo no RetroAchievements</label><input id="raGameId" type="number" min="1" placeholder="ex.: 1121"></div>
-                <button class="btn" data-action="link-ra">Vincular</button>
-                <button class="btn" data-action="sync-ra">Sincronizar</button>
-              </div>
-            </div>`
-          : ''
-      }
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger" data-action="remove-game">${icon('trash')} Remover da biblioteca</button>
@@ -1083,13 +1308,6 @@ function askConfirm({ title, message, confirmLabel = 'Confirmar', danger = false
     );
   });
 }
-
-const BIOS_REGION_LABELS = {
-  'ntsc-u': 'NTSC-U (USA)',
-  'ntsc-j': 'NTSC-J (Japão)',
-  pal: 'PAL (Europa)',
-  global: 'Global / region-free',
-};
 
 function customBiosPlatforms() {
   return state.platforms.filter((platform) => (platform.biosKinds?.length ?? 0) > 0);
@@ -1234,14 +1452,6 @@ function openCoreInstallModal(coreId, detail = null) {
   );
 }
 
-const INSTALL_PHASE_LABEL = {
-  release: 'Consultando release oficial',
-  download: 'Baixando',
-  verify: 'Verificando SHA-256',
-  extract: 'Extraindo pacote',
-  done: 'Concluído',
-};
-
 function updateInstallProgressUI(progress) {
   const { coreId } = progress;
   state.installProgress[coreId] = progress;
@@ -1292,10 +1502,18 @@ async function installCore(coreId) {
 }
 
 function openKeyboardProfileModal() {
+  const free = freePlayerSlots();
+  if (!free.length) {
+    toast('Todos os quatro perfis já estão em uso. Remova um perfil para liberar a vaga.', {
+      title: 'Controle',
+      type: 'warn',
+    });
+    return;
+  }
   openModal(
     `
     <div class="modal-head">
-      <div><h2>Novo perfil de teclado</h2><p>Não exige GUID de hardware</p></div>
+      <div><h2>Novo perfil de teclado</h2><p>Mapeamento padrão WASD + IJKL</p></div>
       <button class="icon-button" data-action="close-modal" aria-label="Fechar">${icon('close')}</button>
     </div>
     <form id="keyboardProfileForm">
@@ -1305,15 +1523,15 @@ function openKeyboardProfileModal() {
             <div class="field">
               <label for="keyboardPlayer">Jogador</label>
               <select id="keyboardPlayer" name="playerIndex">
-                ${[1, 2, 3, 4].map((player) => `<option value="${player}">Player ${player}</option>`).join('')}
+                ${free.map((player) => `<option value="${player}">Player ${player}</option>`).join('')}
               </select>
             </div>
             <div class="field">
               <label for="keyboardName">Nome do perfil</label>
-              <input id="keyboardName" name="name" placeholder="Teclado — Player 1" maxlength="80" required>
+              <input id="keyboardName" name="name" placeholder="Teclado — Player ${free[0]}" maxlength="80" required>
             </div>
           </div>
-          <div class="info-box">O mapeamento padrão WASD + IJKL pode ser editado depois. Perfis de teclado não representam hardware físico e não passam pela validação de GUID.</div>
+          <div class="info-box">O mapeamento pode ser editado depois. Perfis de teclado não representam hardware físico.</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1446,89 +1664,116 @@ async function launchGame(gameId, acknowledgedWarnings = false) {
     state.pendingLaunch = null;
     closeModal({ resolve: false });
     syncShell();
-    toast('Sessão de emulação iniciada em processo isolado.', { title: 'Jogo iniciado' });
+    toast(`Sessão iniciada no ${state.active?.coreLabel ?? 'núcleo'} · ${preferenceSummary(state.active)}`, {
+      title: 'Jogo iniciado',
+    });
   } catch (error) {
     handleError(error, 'Falha ao iniciar jogo');
   }
 }
 
-async function toggleHardcore(next) {
-  if (!state.ra?.connected) {
-    toast('Conecte a conta do RetroAchievements para usar o modo Hardcore.', {
-      title: 'Conta não conectada',
-      type: 'warn',
-    });
-    switchView('achievements');
-    return;
-  }
-  if (next && !state.ra?.hardcore && state.active) {
-    const confirmed = await askConfirm({
-      title: 'Ativar Hardcore em sessão ativa?',
-      message:
-        'Os Save States serão imediatamente desabilitados. A sessão atual continuará rodando, mas não poderá salvar ou carregar estados.',
-      confirmLabel: 'Ativar Hardcore',
-    });
-    if (!confirmed) return;
-    closeModal({ resolve: false });
-  }
+function preferenceSummary(active) {
+  const report = active?.preferences;
+  if (!report) return 'processo isolado';
+  const applied = report.applied?.length ?? 0;
+  const ignored = report.ignored?.length ?? 0;
+  if (!applied) return 'nenhuma preferência mapeada para este núcleo';
+  return ignored
+    ? `${applied} preferência(s) aplicadas, ${ignored} sem suporte`
+    : `${applied} preferência(s) aplicadas`;
+}
+
+function readGamepadHints() {
+  if (!navigator.getGamepads) return [];
+  return [...navigator.getGamepads()].filter(Boolean).map((pad) => ({
+    index: pad.index,
+    id: pad.id,
+    mapping: pad.mapping,
+    connected: pad.connected,
+    buttons: pad.buttons?.length ?? 0,
+    axes: pad.axes?.length ?? 0,
+    hardwareGuid:
+      String(pad.id).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? null,
+  }));
+}
+
+function gamepadSignature(pads = readGamepadHints()) {
+  return pads.map((pad) => `${pad.index}:${pad.id}:${pad.connected ? 1 : 0}`).join('|');
+}
+
+async function detectControllers({ quiet = false } = {}) {
+  const generation = (state.detectGeneration += 1);
+  const pads = readGamepadHints();
+  state.gamepadSignature = gamepadSignature(pads);
+  state.detecting = true;
+  if (state.view === 'controllers') renderView();
+
   try {
-    state.ra = await api.retroachievements.setHardcore(next);
-    syncShell();
-    if (state.view === 'achievements') renderView();
-    if (state.modal?.type === 'game') renderGameModal();
-    toast(next ? 'Hardcore ativo. Save States bloqueados.' : 'Hardcore desativado.', {
-      title: 'RetroAchievements',
-      type: next ? 'warn' : 'info',
+    const detection = await api.controllers.inspectHardware(state.active?.platformId ?? null, {
+      gamepadHints: pads,
     });
+    if (generation !== state.detectGeneration) return;
+    state.detected = detection;
+    if (!quiet && (detection.devices ?? []).length === 0) {
+      toast('Nenhum controle detectado. Conecte o aparelho e pressione um botão.', {
+        type: 'warn',
+      });
+    }
   } catch (error) {
-    handleError(error, 'Falha ao alterar Hardcore');
+    if (generation !== state.detectGeneration) return;
+    if (quiet) console.warn('[controllers] detecção automática falhou:', error?.message ?? error);
+    else handleError(error, 'Falha ao detectar controles');
+  } finally {
+    if (generation === state.detectGeneration) {
+      state.detecting = false;
+      if (state.view === 'controllers') renderView();
+    }
   }
 }
 
-async function detectControllers() {
-  try {
-    const pads = navigator.getGamepads
-      ? [...navigator.getGamepads()].filter(Boolean).map((pad) => ({
-          index: pad.index,
-          id: pad.id,
-          mapping: pad.mapping,
-          connected: pad.connected,
-          buttons: pad.buttons?.length ?? 0,
-          axes: pad.axes?.length ?? 0,
-          hardwareGuid:
-            String(pad.id).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ??
-            null,
-        }))
-      : [];
-    state.detected = await api.controllers.inspect(pads, state.active?.platformId ?? null);
-    renderView();
-    if (state.detected.devices.length === 0) {
-      toast('Nenhum controle detectado. Conecte um dispositivo e tente novamente.', { type: 'warn' });
-    }
-  } catch (error) {
-    handleError(error, 'Falha ao detectar controles');
-  }
+function handleGamepadChange() {
+  if (state.view !== 'controllers' || state.detecting) return;
+  const signature = gamepadSignature();
+  if (signature === state.gamepadSignature) return;
+  state.gamepadSignature = signature;
+  detectControllers({ quiet: true });
+}
+
+function startControllerWatch() {
+  stopControllerWatch();
+  state.controllerWatch = window.setInterval(handleGamepadChange, 2000);
+  window.addEventListener('gamepadconnected', handleGamepadChange);
+  window.addEventListener('gamepaddisconnected', handleGamepadChange);
+}
+
+function stopControllerWatch() {
+  if (state.controllerWatch) window.clearInterval(state.controllerWatch);
+  state.controllerWatch = null;
+  window.removeEventListener('gamepadconnected', handleGamepadChange);
+  window.removeEventListener('gamepaddisconnected', handleGamepadChange);
 }
 
 async function switchView(view) {
   if (!VIEW_META[view]) return;
+  if (state.view === 'controllers' && view !== 'controllers') stopControllerWatch();
   state.view = view;
+  resetViewScroll();
   renderView();
-  viewRoot.scrollTop = 0;
   try {
     if (view === 'bios') {
       [state.bios, state.matrix] = await Promise.all([api.bios.list(), api.bios.matrix()]);
       renderView();
-    } else if (view === 'achievements') {
-      state.ra = await api.retroachievements.status();
-      renderView();
     } else if (view === 'settings') {
-      [state.metadata, state.cores, state.installCatalog] = await Promise.all([
-        api.metadata.status(),
+      [state.cores, state.installCatalog] = await Promise.all([
         api.cores.status(),
         api.cores.installCatalog(),
       ]);
       renderView();
+    } else if (view === 'controllers') {
+      state.profiles = await api.controllers.profiles();
+      renderView();
+      startControllerWatch();
+      await detectControllers({ quiet: true });
     } else if (view === 'library') {
       await refreshLibraryData();
     }
@@ -1549,14 +1794,10 @@ async function refreshCurrentView() {
     if (state.view === 'controllers') {
       state.profiles = await api.controllers.profiles();
       renderView();
-    }
-    if (state.view === 'achievements') {
-      state.ra = await api.retroachievements.status();
-      renderView();
+      await detectControllers({ quiet: true });
     }
     if (state.view === 'settings') {
-      [state.metadata, state.cores, state.installCatalog] = await Promise.all([
-        api.metadata.status(),
+      [state.cores, state.installCatalog] = await Promise.all([
         api.cores.status(),
         api.cores.installCatalog(),
       ]);
@@ -1584,12 +1825,18 @@ function startLiveClock() {
     );
     if (remaining > 0) {
       guard.textContent = `Boot da BIOS em andamento · ${remaining}s restantes`;
-    } else if (state.modal?.type === 'game') {
-      api.saves.list(state.modal.game.id).then((saves) => {
-        state.modal.saves = saves;
-        state.active.bootGuard.active = false;
-        renderGameModal();
-      });
+    } else if (state.modal?.type === 'game' && document.getElementById('bootGuardText')) {
+      // Só re-renderiza se o game modal ainda for o modal ativo — evita
+      // sobrescrever um confirm que esteja por cima (bug de corrida).
+      api.saves
+        .list(state.modal.game.id)
+        .then((saves) => {
+          if (state.modal?.type !== 'game') return;
+          state.modal.saves = saves;
+          if (state.active?.bootGuard) state.active.bootGuard.active = false;
+          renderGameModal();
+        })
+        .catch(() => {});
     }
   }, 1000);
 }
@@ -1646,9 +1893,6 @@ document.addEventListener('click', async (event) => {
       case 'open-settings':
         await switchView('settings');
         return;
-      case 'open-achievements':
-        await switchView('achievements');
-        return;
       case 'import-custom-bios':
         openCustomBiosModal(actionElement.dataset.platform || null);
         return;
@@ -1675,6 +1919,7 @@ document.addEventListener('click', async (event) => {
         return;
       }
       case 'delete-bios': {
+        const id = actionElement.dataset.id;
         const confirmed = await askConfirm({
           title: 'Remover BIOS?',
           message:
@@ -1683,9 +1928,6 @@ document.addEventListener('click', async (event) => {
           danger: true,
         });
         if (!confirmed) return;
-        const id = actionElement.dataset.id;
-        // O modal de confirmação usa o mesmo root; o id fica no elemento capturado.
-        closeModal({ resolve: false });
         await api.bios.remove(id);
         [state.bios, state.matrix] = await Promise.all([api.bios.list(), api.bios.matrix()]);
         syncShell();
@@ -1700,34 +1942,54 @@ document.addEventListener('click', async (event) => {
         await detectControllers();
         return;
       case 'bind-controller': {
-        const index = Number(actionElement.dataset.index);
-        const device = state.detected?.devices.find((entry) => entry.index === index);
+        const key = actionElement.dataset.key;
+        const devices = state.detected?.devices ?? [];
+        const device = devices.find((entry) => entry.key === key);
         if (!device?.hardwareGuid) {
-          toast('GUID de hardware não reportado pelo SO; vínculo recusado.', { type: 'warn' });
+          toast('Dispositivo sem identificador. Detecte novamente e tente de novo.', {
+            type: 'warn',
+          });
           return;
         }
-        const used = new Set(state.profiles.map((profile) => profile.playerIndex));
-        const player = [1, 2, 3, 4].find((entry) => !used.has(entry));
+        const already = state.profiles.find((profile) => profile.hardwareGuid === device.hardwareGuid);
+        if (already) {
+          toast(`Este controle já está vinculado ao Player ${already.playerIndex}.`, {
+            title: 'Controle',
+          });
+          return;
+        }
+        const [player] = freePlayerSlots();
         if (!player) {
-          toast('Todos os quatro perfis já estão em uso.', { type: 'warn' });
+          toast('Todos os quatro perfis já estão em uso. Remova um perfil para liberar a vaga.', {
+            title: 'Controle',
+            type: 'warn',
+            timeout: 6500,
+          });
           return;
         }
+        const inferredApi =
+          device.api === 'xinput' || device.api === 'directinput'
+            ? device.api
+            : device.mapping === 'standard'
+              ? 'xinput'
+              : 'directinput';
         await api.controllers.saveProfile({
           playerIndex: player,
-          name: device.id,
-          api: device.mapping === 'standard' ? 'xinput' : 'directinput',
+          name: device.productName || device.id,
+          api: inferredApi,
           hardwareGuid: device.hardwareGuid,
-          productName: device.id,
+          productName: device.productName || device.id,
         });
         state.profiles = await api.controllers.profiles();
         renderView();
-        toast(`Controle vinculado ao Player ${player}.`, { title: 'Controle' });
+        toast(`“${device.id}” vinculado ao Player ${player}.`, { title: 'Controle' });
         return;
       }
       case 'edit-mapping':
         openMappingModal(actionElement.dataset.id);
         return;
       case 'delete-profile': {
+        const id = actionElement.dataset.id;
         const confirmed = await askConfirm({
           title: 'Remover perfil?',
           message: 'O mapeamento salvo será excluído. O controle físico não é alterado.',
@@ -1735,32 +1997,8 @@ document.addEventListener('click', async (event) => {
           danger: true,
         });
         if (!confirmed) return;
-        const id = actionElement.dataset.id;
-        closeModal({ resolve: false });
         await api.controllers.removeProfile(id);
         state.profiles = await api.controllers.profiles();
-        renderView();
-        return;
-      }
-      case 'ra-toggle-hardcore':
-        await toggleHardcore(!state.ra?.hardcore);
-        return;
-      case 'ra-refresh':
-        state.ra = await api.retroachievements.refresh();
-        renderView();
-        toast('Perfil do RetroAchievements atualizado.', { title: 'Conectado' });
-        return;
-      case 'ra-disconnect': {
-        const confirmed = await askConfirm({
-          title: 'Desconectar conta?',
-          message: 'O Hardcore será desativado e a Web API Key cifrada será removida deste dispositivo.',
-          confirmLabel: 'Desconectar',
-          danger: true,
-        });
-        if (!confirmed) return;
-        closeModal({ resolve: false });
-        state.ra = await api.retroachievements.disconnect();
-        syncShell();
         renderView();
         return;
       }
@@ -1791,7 +2029,6 @@ document.addEventListener('click', async (event) => {
           action: 'confirm-stop',
         });
         if (!confirmed) return;
-        closeModal({ resolve: false });
         await api.emulation.stop();
         state.active = null;
         syncShell();
@@ -1816,7 +2053,6 @@ document.addEventListener('click', async (event) => {
           confirmLabel: 'Carregar estado',
         });
         if (!confirmed) return;
-        closeModal({ resolve: false });
         await api.saves.load(gameId, slot);
         await openGame(gameId);
         toast(`Estado do slot ${slot} carregado.`, { title: 'Save State' });
@@ -1832,10 +2068,10 @@ document.addEventListener('click', async (event) => {
           danger: true,
         });
         if (!confirmed) return;
-        closeModal({ resolve: false });
         await api.saves.remove(gameId, slot);
-        state.modal.saves = await api.saves.list(gameId);
-        renderGameModal();
+        // Reconstrói o game modal do zero — evita `state.modal.saves` sobre null.
+        await openGame(gameId);
+        toast(`Slot ${slot} excluído.`, { title: 'Save State' });
         return;
       }
       case 'toggle-favorite': {
@@ -1847,23 +2083,90 @@ document.addEventListener('click', async (event) => {
         renderView();
         return;
       }
-      case 'scrape': {
+      case 'wikipedia': {
         const game = state.modal.game;
-        toast('Consultando provedor de metadados...', { title: 'Metadados' });
-        await api.metadata.scrape(game.id);
-        const [updated, games] = await Promise.all([
-          api.library.get(game.id),
-          api.library.list({
-            search: state.filters.search,
-            platformId: state.filters.platform,
-            limit: 300,
-          }),
-        ]);
-        state.modal.game = updated;
-        state.games = games;
-        renderGameModal();
+        actionElement.disabled = true;
+        actionElement.innerHTML = '<span class="spinner"></span> Consultando…';
+        try {
+          const result = await api.metadata.wikipedia(game.id);
+          if (!result.found) {
+            toast(
+              'Nenhum artigo compatível encontrado. Ajuste o título do jogo ou use outro provedor de metadados.',
+              { title: 'Wikipédia', type: 'warn', timeout: 6500 },
+            );
+            return;
+          }
+          const [updated, games] = await Promise.all([
+            api.library.get(game.id),
+            api.library.list({
+              search: state.filters.search,
+              platformId: state.filters.platform,
+              limit: 300,
+            }),
+          ]);
+          state.modal.game = updated;
+          state.games = games;
+          renderGameModal();
+          renderView();
+          const updatedFields = [
+            result.coverUpdated ? 'capa' : null,
+            result.synopsisUpdated ? 'sinopse' : null,
+          ].filter(Boolean);
+          toast(
+            updatedFields.length
+              ? `Wikipédia atualizou ${updatedFields.join(' e ')} deste jogo.`
+              : 'Artigo encontrado, mas os dados já estavam completos.',
+            { title: 'Wikipédia' },
+          );
+        } finally {
+          if (actionElement.isConnected) {
+            actionElement.disabled = false;
+            actionElement.innerHTML = `${icon('globe')} Wikipédia`;
+          }
+        }
+        return;
+      }
+      case 'wikipedia-bulk': {
+        if (state.wikiBusy) return;
+        const missing = state.games.filter((game) => !game.synopsis || !game.hasCover).length;
+        if (missing === 0) {
+          toast('Todos os jogos visíveis já têm capa e sinopse.', { title: 'Wikipédia' });
+          return;
+        }
+        state.wikiBusy = true;
+        const dock = $('#scanDock');
+        dock.hidden = false;
+        $('#scanTitle').textContent = 'Enriquecendo com Wikipédia';
+        $('#scanDetail').textContent = 'Preparando artigos em português e inglês...';
+        $('#scanPercent').textContent = '0%';
+        $('#scanProgress').style.width = '4%';
         renderView();
-        toast('Capa e sinopse atualizadas.', { title: 'Metadados' });
+        try {
+          const summary = await api.metadata.wikipediaBulk({ limit: 12, onlyMissing: true });
+          await refreshLibraryData();
+          toast(
+            summary.processed === 0
+              ? 'Nenhum jogo pendente de capa ou sinopse.'
+              : `${summary.enriched} de ${summary.processed} jogo(s) enriquecidos · ${summary.covers} capa(s) e ${summary.synopses} sinopse(s).`,
+            {
+              title: 'Wikipédia',
+              type: summary.failures.length ? 'warn' : 'info',
+              timeout: 6500,
+            },
+          );
+        } finally {
+          state.wikiBusy = false;
+          state.wikiProgress = null;
+          window.setTimeout(() => {
+            if (!state.scan?.active && !state.wikiBusy) dock.hidden = true;
+          }, 2600);
+          renderView();
+        }
+        return;
+      }
+      case 'open-source': {
+        const url = actionElement.dataset.url;
+        if (url) await api.app.openExternal(url);
         return;
       }
       case 'remove-game': {
@@ -1876,28 +2179,12 @@ document.addEventListener('click', async (event) => {
           danger: true,
         });
         if (!confirmed) return;
-        closeModal({ resolve: false });
         await api.library.remove(game.id);
         state.games = state.games.filter((entry) => entry.id !== game.id);
         await refreshLibraryData();
         toast('Jogo removido da biblioteca. Arquivo preservado.', { title: 'Biblioteca' });
         return;
       }
-      case 'link-ra': {
-        const input = $('#raGameId');
-        const value = Number(input?.value);
-        if (!Number.isInteger(value) || value <= 0) {
-          toast('Informe um ID numérico válido.', { type: 'warn' });
-          return;
-        }
-        await api.retroachievements.linkGame(state.modal.game.id, value);
-        toast('Jogo vinculado ao RetroAchievements.', { title: 'Conquistas' });
-        return;
-      }
-      case 'sync-ra':
-        await api.retroachievements.syncAchievements(state.modal.game.id);
-        toast('Conquistas sincronizadas.', { title: 'RetroAchievements' });
-        return;
       case 'install-core':
         await installCore(actionElement.dataset.core);
         return;
@@ -1917,18 +2204,12 @@ document.addEventListener('click', async (event) => {
         await api.cores.revealConfig();
         return;
       case 'confirm-yes':
-      case 'confirm-stop': {
-        const resolve = state.confirmResolve;
-        state.confirmResolve = null;
-        resolve?.(true);
+      case 'confirm-stop':
+        closeModal({ resolve: true });
         return;
-      }
-      case 'confirm-no': {
-        const resolve = state.confirmResolve;
-        state.confirmResolve = null;
-        resolve?.(false);
+      case 'confirm-no':
+        closeModal({ resolve: false });
         return;
-      }
       case 'close-modal':
         closeModal();
         return;
@@ -1944,17 +2225,6 @@ document.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.target;
   try {
-    if (form.id === 'raConnectForm') {
-      const data = new FormData(form);
-      state.ra = await api.retroachievements.connect({
-        username: data.get('username'),
-        apiKey: data.get('apiKey'),
-      });
-      syncShell();
-      renderView();
-      toast('Conta conectada. Hardcore está disponível.', { title: 'RetroAchievements' });
-      return;
-    }
     if (form.id === 'customBiosForm') {
       const data = new FormData(form);
       const submit = form.querySelector('button[type="submit"]');
@@ -1982,8 +2252,16 @@ document.addEventListener('submit', async (event) => {
     }
     if (form.id === 'keyboardProfileForm') {
       const data = new FormData(form);
+      const playerIndex = Number(data.get('playerIndex'));
+      if (state.profiles.some((profile) => profile.playerIndex === playerIndex)) {
+        toast(`O Player ${playerIndex} já tem um perfil vinculado.`, {
+          title: 'Controle',
+          type: 'warn',
+        });
+        return;
+      }
       await api.controllers.saveProfile({
-        playerIndex: Number(data.get('playerIndex')),
+        playerIndex,
         name: data.get('name'),
         api: 'keyboard',
         hardwareGuid: null,
@@ -2003,12 +2281,6 @@ document.addEventListener('submit', async (event) => {
       renderView();
       toast('Mapeamento salvo.', { title: 'Controles' });
       return;
-    }
-    if (form.dataset.metadataForm) {
-      const data = Object.fromEntries(new FormData(form).entries());
-      state.metadata = await api.metadata.setCredentials(form.dataset.metadataForm, data);
-      renderView();
-      toast('Credenciais cifradas e salvas.', { title: 'Metadados' });
     }
   } catch (error) {
     handleError(error);
@@ -2117,8 +2389,6 @@ function toggleTheme() {
 
 $('#themeToggle')?.addEventListener('click', toggleTheme);
 $('#refreshButton').addEventListener('click', refreshCurrentView);
-$('#raTopChip').addEventListener('click', () => switchView('achievements'));
-$('#sidebarHardcore').addEventListener('click', () => toggleHardcore(!state.ra?.hardcore));
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.modal) closeModal();
@@ -2173,6 +2443,38 @@ api.library.onScanProgress((progress) => {
   }
 });
 
+api.metadata.onWikipediaProgress((progress) => {
+  if (!state.wikiBusy) return;
+  state.wikiProgress = progress;
+  const dock = $('#scanDock');
+  if (!dock) return;
+  dock.hidden = false;
+  if (progress.phase === 'game-start' || progress.phase === 'game-done') {
+    const total = Math.max(1, Number(progress.total) || 1);
+    const completed = progress.phase === 'game-done' ? progress.index : Math.max(0, progress.index - 1);
+    const percent = Math.round((completed / total) * 100);
+    $('#scanTitle').textContent = 'Enriquecendo com Wikipédia';
+    $('#scanDetail').textContent = `${progress.title} · ${progress.index} de ${total}`;
+    $('#scanPercent').textContent = `${percent}%`;
+    $('#scanProgress').style.width = `${Math.max(4, percent)}%`;
+  } else if (progress.phase === 'done') {
+    $('#scanTitle').textContent = 'Metadados atualizados';
+    $('#scanDetail').textContent =
+      `${progress.enriched} jogo(s) enriquecidos de ${progress.total} analisados`;
+    $('#scanPercent').textContent = '100%';
+    $('#scanProgress').style.width = '100%';
+  }
+});
+
+document.addEventListener(
+  'error',
+  (event) => {
+    const image = event.target;
+    if (image?.tagName === 'IMG') image.classList.add('is-broken');
+  },
+  true,
+);
+
 api.emulation.onChanged((session) => {
   const hadSession = Boolean(state.active);
   state.active = session;
@@ -2190,13 +2492,6 @@ api.emulation.onCoreEvent((payload) => {
   if (payload?.event === 'error') {
     toast(payload.payload?.message ?? 'Erro no núcleo.', { title: 'Núcleo', type: 'error' });
   }
-});
-
-api.retroachievements.onChanged((ra) => {
-  state.ra = ra;
-  syncShell();
-  if (state.view === 'achievements') renderView();
-  if (state.modal?.type === 'game') renderGameModal();
 });
 
 api.bios.onChanged((matrix) => {

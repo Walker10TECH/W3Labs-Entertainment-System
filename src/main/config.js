@@ -4,6 +4,7 @@ const path = require('node:path');
 const { AppPaths } = require('./lib/paths');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const APP_VERSION = require('../../package.json').version;
 
 const DEFAULT_SETTINGS = Object.freeze({
   'video.resolution': '1080p',
@@ -63,7 +64,7 @@ function createRuntimeConfig({
       maxActiveSessions: 1,
       stopGraceMs: 4_000,
     },
-    version: env.npm_package_version || '1.0.0',
+    version: env.npm_package_version || APP_VERSION,
   };
 }
 

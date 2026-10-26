@@ -1,6 +1,6 @@
 {
   "name": "w3labs-entertainment-system",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Emulador multi-console com biblioteca unificada, isolamento de núcleos e integridade de BIOS.",
   "main": "src/main/main.js",
   "type": "commonjs",
@@ -32,6 +32,9 @@
     "appId": "com.w3labs.entertainment",
     "productName": "W3Labs Entertainment System",
     "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "directories": {
       "output": "release"
     },
@@ -39,7 +42,10 @@
       "src/**/*",
       "config/**/*",
       "package.json",
-      "!**/*.map"
+      "!**/*.map",
+      "!**/koffi/build/koffi/{darwin_*,freebsd_*,linux_*,musl_*,openbsd_*,win32_arm64,win32_ia32}",
+      "!**/node-hid/{build,hidapi}",
+      "!**/node-hid/prebuilds/{HID-darwin*,HID-linux*,HID_hidraw*,HID-win32_arm64,HID-win32-arm64,HID-win32-ia32}"
     ],
     "win": {
       "target": [
@@ -66,5 +72,9 @@
       ],
       "category": "Game"
     }
+  },
+  "dependencies": {
+    "node-hid": "^3.4.0",
+    "xinput-ffi": "^4.0.2"
   }
 }

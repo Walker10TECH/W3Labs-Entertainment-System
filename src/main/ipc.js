@@ -4,6 +4,7 @@ const path = require('node:path');
 const { AppError, publicError } = require('./lib/errors');
 const { publicPlatforms } = require('../../config/platforms');
 const { DEFAULT_SETTINGS } = require('./config');
+const { preferenceCoverage } = require('./cores/launch-preferences');
 
 const SETTINGS_SCHEMA = Object.freeze({
   'video.resolution': new Set(['native', '720p', '1080p', '1440p', '4k', 'windowed']),
@@ -67,8 +68,8 @@ function registerIpcHandlers({ ipcMain, dialog, shell, app, runtime, services, g
     logsRoot: runtime.paths.logs,
     platforms: publicPlatforms(),
     settings: services.settings.getAll(),
-    hardcore: services.ra.getStatus(),
     cores: services.coreRegistry.statusAll(),
+    preferenceCoverage: preferenceCoverage(),
   }));
 
   safeHandle('app:stats', async () => {
@@ -176,6 +177,33 @@ function registerIpcHandlers({ ipcMain, dialog, shell, app, runtime, services, g
   safeHandle('metadata:clearCredentials', async (_event, provider) =>
     services.metadata.clearCredentials(provider),
   );
+  safeHandle('metadata:wikipedia', async (_event, gameId, options) =>
+    services.metadata.wikipediaGame(gameId, options),
+  );
+  safeHandle('metadata:wikipediaBulk', async (_event, options) =>
+    services.metadata.wikipediaBulk({
+      ...(options ?? {}),
+      onProgress: (progress) => notify('metadata:wikipedia-progress', progress),
+    }),
+  );
+  safeHandle('app:openExternal', async (_event, target) => {
+    let parsed;
+    try {
+      parsed = new URL(String(target));
+    } catch {
+      throw new AppError('OPEN_EXTERNAL_INVALID', 'Link externo inválido.');
+    }
+    const host = parsed.hostname.toLowerCase();
+    const allowed =
+      parsed.protocol === 'https:' &&
+      (host === 'wikipedia.org' ||
+        host.endsWith('.wikipedia.org') ||
+        host === 'retroachievements.org' ||
+        host.endsWith('.retroachievements.org'));
+    if (!allowed) throw new AppError('OPEN_EXTERNAL_BLOCKED', 'Domínio externo não permitido.');
+    await shell.openExternal(parsed.href);
+    return { opened: parsed.href };
+  });
 
   safeHandle('bios:list', async () => services.bios.list());
   safeHandle('bios:matrix', async () => services.bios.getMatrix());
@@ -242,6 +270,11 @@ function registerIpcHandlers({ ipcMain, dialog, shell, app, runtime, services, g
   safeHandle('controllers:removeProfile', async (_event, id) => services.controllers.removeProfile(id));
   safeHandle('controllers:inspect', async (_event, gamepads, platformId) =>
     services.controllers.inspectDetected(gamepads, platformId),
+  );
+  safeHandle('controllers:inspectHardware', async (_event, platformId, options) =>
+    services.controllers.inspectHardware(platformId ?? null, {
+      gamepadHints: Array.isArray(options?.gamepadHints) ? options.gamepadHints : null,
+    }),
   );
 
   safeHandle('ra:status', async () => services.ra.getStatus());

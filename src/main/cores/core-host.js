@@ -174,6 +174,7 @@ async function startBridge() {
         stateDir: config.stateDir,
         biosFiles: config.biosFiles,
         fullscreen: config.fullscreen,
+        preferences: config.preferences ?? null,
         environment: config.environment,
       },
     })}\n`,

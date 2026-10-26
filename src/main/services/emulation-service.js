@@ -1,8 +1,10 @@
 'use strict';
 
 const { EventEmitter } = require('node:events');
+const path = require('node:path');
 const { AppError } = require('../lib/errors');
 const { getPlatform } = require('../../../config/platforms');
+const { normalizePreferences } = require('../cores/launch-preferences');
 
 class EmulationService extends EventEmitter {
   constructor({
@@ -68,8 +70,11 @@ class EmulationService extends EventEmitter {
     const stateDirectory = this.paths.saveStatePath(platform.id, game.romHash, 0).directory;
     this.paths.assertSavePath(stateDirectory);
 
+    const preferences = this.settings.getAll();
     const coreConfig = this.coreRegistry.buildLaunchSpec(platform.id, game, biosFiles, {
       stateDir: stateDirectory,
+      preferences,
+      overlayDirectory: path.join(this.paths.configDir, 'launch-overlays'),
     });
 
     const coreInfo = await this.coreManager.start({
@@ -84,7 +89,8 @@ class EmulationService extends EventEmitter {
       capabilities: coreConfig.capabilities,
       biosFiles,
       stateDir: stateDirectory,
-      fullscreen: this.settings.get('video.resolution') !== 'windowed',
+      fullscreen: normalizePreferences(preferences).fullscreen,
+      preferences: coreConfig.preferences,
     });
 
     const id = coreInfo.sessionId;
@@ -126,6 +132,7 @@ class EmulationService extends EventEmitter {
       hardcoreAtStart: hardcore,
       stopping: false,
       warnings: hardware.warnings,
+      preferences: coreConfig.preferences,
     };
     this.logger?.info('emulation', 'Sessão iniciada.', {
       gameId: game.id,
@@ -133,6 +140,12 @@ class EmulationService extends EventEmitter {
       core: coreConfig.coreId,
       sessionId: id,
       hardcore,
+      preferenciasAplicadas: coreConfig.preferences.applied.map(
+        (entry) => `${entry.setting} (${entry.kind}: ${entry.detail})`,
+      ),
+      preferenciasIgnoradas: coreConfig.preferences.ignored.map(
+        (entry) => `${entry.setting} (${entry.reason})`,
+      ),
     });
     const session = this.#publicSession(this.active);
     this.emit('changed', session);
@@ -301,6 +314,7 @@ class EmulationService extends EventEmitter {
           active.accumulatedMs / 1000,
       ),
       warnings: active.warnings,
+      preferences: active.preferences ?? { applied: [], ignored: [], overlayPath: null },
     };
   }
 
